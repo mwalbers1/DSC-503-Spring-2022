@@ -1,0 +1,478 @@
+---
+title: "DSC 503 Statistical Analysis: Final Project"
+author: "Michael Albers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse, warn.conflicts = FALSE)
+```
+
+
+
+## Project Overview
+
+
+Conduct a ANOVA analysis with multiple levels for two sectors of stocks which are ESG (Environmental Social Governance) and Health Care.
+
+
+## Research Question
+
+This analysis will attempt to answer the question of whether an investment portfolio can benefit from a combination of ESG and Healthcare stocks.  The assumption is that differences in fundamental ratios among these two groups may lead to different price movements among the two independent variables which can bring diversification to an investor.  This analysis does not attempt to predict future returns but rather it attempts to answer whether Healthcare stocks and ESG stocks are to be considered together as a diversification strategy.
+
+
+## Dataset
+
+The pricing data for 12/31/2021 and for 4/14/2022 was accessed via an API call to the polygon.io site. The fundamental data including financial ratios and performance metrics for each stock was accessed via an API call to the Alpha Vantage site. 
+
+
+## Load pricing data files
+
+```{r}
+esg_ye_prices <- read.csv('data/ESG_prices_20211231.csv')
+```
+
+```{r}
+esg_2022_q2_prices <- read.csv('data/ESG_prices_20220414.csv')
+```
+
+```{r}
+healthcare_ye_prices <- read.csv('data/Healthcare_prices_20211231.csv')
+```
+
+```{r}
+healthcare_q2_prices <- read.csv('data/Healthcare_prices_20220414.csv')
+```
+
+
+## Scale stock prices
+
+The prices among the individual ESG and Healthcare stocks will vary significantly based on market conditions and the specific industry of the stock. It is very likely that the stock prices will be right-skewed.
+
+The 2021 year-end and 2022 Q2 prices for each stock will be normalized by taking the log of the prices which is known as log normalization. Then the difference of the two log prices will be calculated for each stock to derive a new feature representing the gain/loss of the stock between 2021 year-end and the April 2022 price. The new price gain loss feature for ESG and Healthcare stocks should then approximate a normal distribution.
+
+
+### Histogram of prices (before log normalization)
+
+```{r}
+ggplot(esg_ye_prices, aes(x=close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("ESG 2021 Year-end Prices")
+```
+```{r}
+ggplot(esg_2022_q2_prices, aes(x=close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("ESG 2022 Q2 Prices")
+```
+```{r}
+ggplot(healthcare_ye_prices, aes(x=close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Healthcare 2021 Year-end Prices")
+```
+
+```{r}
+ggplot(healthcare_q2_prices, aes(x=close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Healthcare 2022 Q2 Prices")
+```
+
+All four histograms for the ESG and Healthcare stock prices are skewed to the right.  A log normalization on the prices will be done to scale the prices so that they approximate a normal distribution. 
+
+
+```{r}
+esg_ye_prices$log_close <- log(esg_ye_prices$close)
+esg_2022_q2_prices$log_close <- log(esg_2022_q2_prices$close)
+healthcare_ye_prices$log_close <- log(healthcare_ye_prices$close)
+healthcare_q2_prices$log_close <- log(healthcare_q2_prices$close)
+```
+
+
+
+### Histogram of prices (after log normalization)
+
+```{r}
+ggplot(esg_ye_prices, aes(x=log_close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("ESG 2021 Year-end Prices")
+```
+```{r}
+ggplot(esg_2022_q2_prices, aes(x=log_close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("ESG 2022 Q2 Prices")
+```
+```{r}
+ggplot(healthcare_ye_prices, aes(x=log_close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Healthcare 2021 Year-end Prices")
+```
+
+```{r}
+ggplot(healthcare_q2_prices, aes(x=log_close)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Healthcare 2022 Q2 Prices")
+```
+
+
+The prices for ESG and Healthcare stocks more closely follows a normal distribution after applying a log normalization to the close price.  
+
+
+## Create new price gain/loss feature
+
+The next step is to calculate a new feature for price gain/loss for each ESG and Healthcare stock. The new price gain/loss feature will be the response variable for the ANOVA factor analysis.
+
+
+```{r}
+esg_price_diff <- merge(esg_2022_q2_prices, esg_ye_prices, by.x = 'ticker', by.y = 'ticker') %>%
+  select(ticker, log_close.x, log_close.y) %>%
+  mutate(log_price_gain_loss = log_close.x-log_close.y)
+```
+
+```{r}
+esg_price_diff$sector <- "ESG"
+```
+
+
+```{r}
+healthcare_price_diff <- merge(healthcare_q2_prices, healthcare_ye_prices, by.x = 'ticker', by.y = 'ticker') %>%
+  select(ticker, log_close.x, log_close.y) %>%
+  mutate(log_price_gain_loss = log_close.x-log_close.y)
+```
+
+
+```{r}
+healthcare_price_diff$sector <- "HC"
+```
+
+```{r}
+stock_prices_gain_loss <- rbind(healthcare_price_diff, esg_price_diff)
+```
+
+```{r}
+duplicate_tickers <- stock_prices_gain_loss[duplicated(stock_prices_gain_loss$ticker),]
+```
+
+```{r}
+duplicate_tickers
+```
+
+
+```{r}
+# remove duplicate tickers from ESG price diff data frame
+esg_price_diff_new <- anti_join(esg_price_diff, duplicate_tickers, by="ticker")
+```
+
+```{r}
+stock_prices_gain_loss <- rbind(healthcare_price_diff, esg_price_diff_new)
+```
+
+```{r}
+# check for duplicate tickers
+stock_prices_gain_loss[duplicated(stock_prices_gain_loss$ticker),] %>% count()
+```
+
+```{r}
+# take subset of columns 
+stock_prices_gain_loss <- subset(stock_prices_gain_loss, select = c(ticker, log_price_gain_loss, sector))
+```
+
+```{r}
+str(stock_prices_gain_loss)
+```
+
+
+
+## Load ESG and Healthcare company information files
+
+The company information including fundamental ratios for each stock will be loaded into data frames 
+for both ESG and Healthcare groups.
+
+```{r}
+esg_company_info <- read.csv('data/ESG_company_information.csv')
+```
+
+```{r}
+colnames(esg_company_info)[1] <- "Symbol"
+```
+
+```{r}
+str(esg_company_info)
+```
+
+
+
+```{r}
+healthcare_company_info <- read.csv('data/Healthcare_company_information.csv')
+```
+
+
+```{r}
+str(healthcare_company_info)
+```
+
+
+
+## Extract fundamentals from ESG and Healthcare company information data frames
+
+For the ESG and Healthcare stocks, the profit margin, operating margin, return on equity, return on assets, and beta will be extracted. All columns except the Beta fall within zero and one.  The beta column which is a measure of volatility will be scaled between zero and one. 
+
+
+```{r}
+extract_company_info.f <- function(df) {
+  subset_df <- subset(df, select=c(Symbol, 
+                                   ProfitMargin, 
+                                   OperatingMarginTTM,
+                                   ReturnOnAssetsTTM,
+                                   ReturnOnEquityTTM,
+                                   Beta ))
+}
+```
+
+
+
+```{r}
+zero_one_func <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+```
+
+
+```{r}
+esg.df <- extract_company_info.f(esg_company_info)
+```
+
+```{r}
+str(esg.df)
+```
+
+
+```{r}
+healthcare.df <- extract_company_info.f(healthcare_company_info)
+```
+
+```{r}
+str(healthcare.df)
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+healthcare.df$Beta <- as.double(healthcare.df$Beta)
+```
+
+```{r}
+healthcare.df$Beta <- ifelse(is.na(healthcare.df$Beta),0,healthcare.df$Beta)
+```
+
+
+```{r}
+esg.df$beta_scaled <- zero_one_func(esg.df$Beta)
+```
+
+```{r}
+healthcare.df$beta_scaled <- zero_one_func(healthcare.df$Beta)
+```
+
+```{r}
+head(esg.df)
+```
+
+```{r}
+head(healthcare.df)
+```
+
+## Create factors based on ranges of fundamentals
+
+The factored ANOVA model will use factors as it's explanatory variables and the price gain/loss as the response variable.
+
+The numeric columns for ProfitMargin, OperatingMarginTTM, ReturnOnAssetsTTM, ReturnOnEquityTTM, and Beta_Scaled will be used to create new factor columns. The new factor columns will have one of three values (1 - Low, 2 - Mid, 3 - High).
+
+### Create new ESG factor columns
+
+```{r}
+create_fct_col.f <- function(col) {
+  factor.col <- as.factor(ifelse(abs(col) <= 0.33, 1, 
+                                     ifelse(abs(col) > 0.33 & abs(col) <= 0.66, 2,3)))
+}
+```
+
+
+```{r}
+esg.df$ProfitMargin_factor <- create_fct_col.f(abs(esg.df$ProfitMargin))
+esg.df$OperatingMargin_factor <- create_fct_col.f(abs(esg.df$OperatingMarginTTM))
+esg.df$ReturnOnAssets_factor <- create_fct_col.f(abs(esg.df$ReturnOnAssetsTTM))
+esg.df$ReturnOnEquity_factor <- create_fct_col.f(abs(esg.df$ReturnOnEquityTTM))
+esg.df$Beta_factor <- create_fct_col.f(abs(esg.df$beta_scaled))
+```
+
+
+### Create new Healthcare factor columns
+
+```{r}
+healthcare.df$ProfitMargin_factor <- create_fct_col.f(abs(healthcare.df$ProfitMargin))
+healthcare.df$OperatingMargin_factor <- create_fct_col.f(abs(healthcare.df$OperatingMarginTTM))
+healthcare.df$ReturnOnAssets_factor <- create_fct_col.f(abs(healthcare.df$ReturnOnAssetsTTM))
+healthcare.df$ReturnOnEquity_factor <- create_fct_col.f(abs(healthcare.df$ReturnOnEquityTTM))
+healthcare.df$Beta_factor <- create_fct_col.f(abs(healthcare.df$beta_scaled))
+```
+
+
+#### Remove duplicate stocks
+
+Remove stocks that exist in both ESG and Healthcare data frames from ESG data frame
+
+```{r}
+esg.df.new <- anti_join(esg.df, duplicate_tickers, by=c("Symbol" = "ticker"))
+```
+
+#### Subset columns
+
+
+```{r}
+esg_stock_info <- subset(esg.df.new, select=c("Symbol", 
+                                              "ProfitMargin_factor",
+                                              "OperatingMargin_factor",
+                                              "ReturnOnAssets_factor",
+                                              "ReturnOnEquity_factor",
+                                              "Beta_factor"
+                                              ))
+```
+
+```{r}
+str(esg_stock_info)
+```
+```{r}
+healthcare_stock_info <- subset(healthcare.df, select=c("Symbol", 
+                                              "ProfitMargin_factor",
+                                              "OperatingMargin_factor",
+                                              "ReturnOnAssets_factor",
+                                              "ReturnOnEquity_factor",
+                                              "Beta_factor"
+                                              ))
+```
+
+```{r}
+str(healthcare_stock_info)
+```
+
+```{r}
+stock_info.all <- rbind(esg_stock_info, healthcare_stock_info)
+```
+
+## Create input data frame for Anova model
+
+```{r}
+stocks.clean <- merge(stock_prices_gain_loss, stock_info.all, by.x = "ticker", by.y = "Symbol") %>%
+  select(ticker, log_price_gain_loss, sector, ProfitMargin_factor, OperatingMargin_factor, ReturnOnAssets_factor, ReturnOnEquity_factor, Beta_factor)
+```
+
+```{r}
+colnames(stocks.clean) <- c("ticker", "log_price_gain_loss", "sector",
+                            "profit_margin", "operating_margin", "return_assets",
+                            "return_equity", "beta")
+```
+
+```{r}
+stocks.clean$sector <- as.factor(stocks.clean$sector)
+```
+
+
+```{r}
+str(stocks.clean)
+```
+
+
+## Three-way ANOVA models
+
+Three separate three-way ANOVA models will be created to determine if the mean of the log_price_gain_loss dependent variable is different between ESG and Healthcare stocks, and which factors may contribute to the difference in means.
+
+### ANOVA model 1:
+
+**Dependent variable:** log_price_gain_loss
+
+**Factors:**
+
+- sector (ESG = ESG stock; HC = Healthcare stock)
+  
+- profit_margin
+  
+- operating_margin
+  
+
+```{r}
+model_1 <- aov(log_price_gain_loss ~ sector*profit_margin*operating_margin, data=stocks.clean)
+```
+
+```{r}
+summary(model_1)
+```
+
+### ANOVA model 2:
+
+**Dependent variable:** log_price_gain_loss
+
+**Factors:**
+
+- sector (ESG = ESG stock; HC = Healthcare stock)
+  
+- return_assets
+  
+- return_equity
+  
+
+```{r}
+model_2 <- aov(log_price_gain_loss ~ sector*return_assets*return_equity, data=stocks.clean)
+```
+
+```{r}
+summary(model_2)
+```
+
+
+### ANOVA model 3:
+
+**Dependent variable:** log_price_gain_loss
+
+**Factors:**
+
+- sector (ESG = ESG stock; HC = Healthcare stock)
+  
+- beta 
+  
+  
+```{r}
+model_3 <- aov(log_price_gain_loss ~ sector*beta, data=stocks.clean)
+```
+
+```{r}
+summary(model_3)
+```
+
+## Findings
+
+- The sector factor was statistically significant in all ANOVA tests which means that sector contributes to the difference in variability in the log_price_gain_loss dependent variable among ESG and Healthcare stocks
+
+
+- Combination of sector and beta was statistically significant in explaining variance in the dependent variable
+
+
+## Limitations
+
+- There were some outliers in the Healthcare stocks data which were present in the analysis. The outliers were not removed because the sample size for Healthcare stocks small.
+
+- The Alpha Vantage API for the company fundamental data only returned the latest available measures. As a result, the dataset had stock fundamentals from 2021 year-end as well as 2022 Q2.  So the data was more current for some stocks as compared to other stocks in which the latest 2022 Q1 data was not available. 
+
+
+## References
+
+**Stock Prices Data**
+
+https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
+
+**Company Information Data**
+
+Company Overview. https://www.alphavantage.co/documentation/
+
+
