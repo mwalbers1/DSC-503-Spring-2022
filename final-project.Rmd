@@ -1,8 +1,7 @@
 ---
 title: "DSC 503 Statistical Analysis: Final Project"
 author: "Michael Albers"
-date: "`r Sys.Date()`"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
