@@ -1,0 +1,782 @@
+---
+title: 'DSC 503 Statistical Analysis: Survival Analysis'
+
+date: "`r Sys.Date()`"
+
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# libraries
+library(tidyverse, warn.conflicts = FALSE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(stringr, warn.conflicts = FALSE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(scales, warn.conflicts = FALSE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(survival, warn.conflicts = FALSE)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(survminer, warn.conflicts = FALSE)
+```
+
+
+
+## Survival Analysis on COVID-19 pre-existing conditions
+
+Use survival analysis to estimate the time to a death event for patients diagnosed with COVID-19 who have pre-existing conditions for hypertension, cardiovascular disease, asthma, diabetes, and tobacco use.  This analysis should indicate which of the five pre-existing conditions have the shortest and longest time to death estimates.
+
+
+## Data Set
+
+The patient-level data for pre-existing conditions of COVID-19 is sourced from Mexico's <a href="https://www.gob.mx/salud/documentos/datos-abiertos-152127">Open Data General Directorate of Epidemiology</a> COVID-19 database.  This data set was downloaded from <a href="https://www.kaggle.com/datasets/tanmoyx/covid19-patient-precondition-dataset">Kaggle</a>.
+
+
+## Pre processing of Data
+
+The raw dataset has over 566,000 records of patient data. The data set will be filtered to include:
+
+- Patients with positive Covid test results
+- Date of symptoms between 01/01/2020 and 06/30/2020
+- Pre-existing conditions for asthma, hypertension, cardiovascular, diabetes, and tobacco use
+
+
+```{r}
+covid_pre_condition <- read.csv('data/covid_pre_condition.csv')
+```
+
+```{r}
+str(covid_pre_condition)
+```
+
+```{r}
+summary(covid_pre_condition)
+```
+
+```{r fig.width=5}
+
+ggplot(data = covid_pre_condition, aes(covid_res)) +
+  geom_bar() +
+  ggtitle("Number of Covid Result Types") +
+  scale_y_continuous(label=comma) +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Result Type (1=Positive 2=Negative 3=Pending)", y="Count")
+
+```
+
+### Filter for Positive cases
+
+```{r}
+
+covid_positive <- covid_pre_condition %>%
+  filter(covid_res == 1)
+
+```
+
+
+```{r}
+length(covid_positive$covid_res)
+```
+
+### Clean date_died column
+
+The date_died column has values of 999-99-99 which means that the patient is still alive. These values will be converted to NA
+
+```{r}
+covid_positive[covid_positive["date_died"] == "9999-99-99", "date_died"] <- NA
+```
+
+```{r}
+str(covid_positive$date_died)
+```
+
+### Convert date columns to date datatype
+
+Use a regular expression pattern match to check that the dates are in the correct format
+
+
+```{r}
+entry_date.pattern <- grep("(\\d{2})-(\\d{2})-(\\d{4})", covid_positive$entry_date)
+date_symptoms.pattern <- grep("(\\d{2})-(\\d{2})-(\\d{4})", covid_positive$date_symptoms)
+date_died.pattern <- grep("(\\d{2})-(\\d{2})-(\\d{4})", covid_positive$date_died)
+```
+
+
+```{r}
+length(entry_date.pattern)
+length(date_symptoms.pattern)
+length(date_died.pattern)
+```
+
+
+```{r}
+# convert the date columns to a date datatype
+covid_positive$entry_date <- as.Date(covid_positive$entry_date, "%d-%m-%y")
+covid_positive$date_symptoms <- as.Date(covid_positive$date_symptoms, "%d-%m-%y")
+covid_positive$date_died <- as.Date(covid_positive$date_died, "%d-%m-%y")
+
+```
+
+
+```{r}
+str(covid_positive)
+```
+
+```{r}
+summary(covid_positive)
+```
+
+
+### Take subset of pre-existing conditions
+
+```{r}
+covid_positive <- subset(covid_positive, select = c(id, 
+                                                    sex, 
+                                                    patient_type, 
+                                                    entry_date, 
+                                                    date_symptoms,
+                                                    date_died,
+                                                    age,
+                                                    asthma,
+                                                    diabetes,
+                                                    hypertension,
+                                                    cardiovascular,
+                                                    tobacco
+                                                    ))
+```
+
+
+
+### Check for duplicate patient ids
+
+```{r}
+# identify duplicate patient ids
+covid_positive[duplicated(covid_positive$id),] %>% count()
+
+```
+
+
+There are 773 duplicate patient ids which will be removed.
+
+
+```{r}
+# remove duplicate patient ids
+covid_positive <- covid_positive[!duplicated(covid_positive$id),]
+
+```
+
+
+
+```{r}
+str(covid_positive)
+
+```
+
+## Create new feature called event
+
+0 = survived, 1 = death
+
+```{r}
+# create new event column from date_died column
+covid_positive$event <- ifelse(is.na(covid_positive$date_died), 0, 1)
+
+```
+
+```{r}
+covid_positive$event <- as.factor(covid_positive$event)
+```
+
+
+```{r}
+str(covid_positive)
+```
+
+```{r}
+summary(covid_positive)
+```
+
+
+## Show survival frequencies by pre-existing condition 
+
+Plot event frequencies for patients diagnosed with asthma, diabetes, hypertension, cardiovascular, and tobacco use
+
+```{r}
+asthma_cases <- covid_positive %>%
+  filter(asthma == "1") %>%
+  mutate(pe_condition = "asthma") %>%
+  subset(select = c(pe_condition, date_symptoms, event)) %>%
+  arrange(date_symptoms)
+  
+```
+
+```{r}
+diabetes_cases <- covid_positive %>%
+  filter(diabetes == "1") %>%
+  mutate(pe_condition = "diabetes") %>%
+  subset(select = c(pe_condition, date_symptoms, event)) %>%
+  arrange(date_symptoms)
+```
+
+```{r}
+hypertension_cases <- covid_positive %>%
+  filter(hypertension == "1") %>%
+  mutate(pe_condition = "hypertension") %>%
+  subset(select = c(pe_condition, date_symptoms, event)) %>%
+  arrange(date_symptoms)
+```
+
+```{r}
+cardiovascular_cases <- covid_positive %>%
+  filter(cardiovascular == "1") %>%
+  mutate(pe_condition = "cardiovascular") %>%
+  subset(select = c(pe_condition, date_symptoms, event)) %>%
+  arrange(date_symptoms)
+```
+
+```{r}
+tobacco_cases <- covid_positive %>%
+  filter(tobacco == "1") %>%
+  mutate(pe_condition = "tobacco") %>%
+  subset(select = c(pe_condition, date_symptoms, event)) %>%
+  arrange(date_symptoms)
+```
+
+
+```{r}
+pe.events <- rbind(asthma_cases, diabetes_cases, 
+                   hypertension_cases, cardiovascular_cases, 
+                   tobacco_cases)
+```
+
+
+
+### Convert pre-existing columns to factors
+
+```{r}
+# convert the pre-existing columns to factors
+covid_positive$asthma <- as.factor(covid_positive$asthma)
+covid_positive$diabetes <- as.factor(covid_positive$diabetes)
+covid_positive$hypertension <- as.factor(covid_positive$hypertension)
+covid_positive$cardiovascular <- as.factor(covid_positive$cardiovascular)
+covid_positive$tobacco <- as.factor(covid_positive$tobacco)
+```
+
+```{r}
+levels(covid_positive$asthma)
+levels(covid_positive$diabetes)
+levels(covid_positive$hypertension)
+levels(covid_positive$cardiovascular)
+levels(covid_positive$tobacco)
+```
+
+#### Rename levels for pre-existing factors
+
+```{r}
+levels(covid_positive$asthma) <- c("Yes", "No", "Ignored")
+levels(covid_positive$diabetes) <- c("Yes", "No", "Ignored")
+levels(covid_positive$hypertension) <- c("Yes", "No", "Ignored")
+levels(covid_positive$cardiovascular) <- c("Yes", "No", "Ignored")
+levels(covid_positive$tobacco) <- c("Yes", "No", "Ignored")
+```
+
+
+### Plot pre-existing factors
+
+```{r fig.height=7, fig.width=8}
+par(mfrow = c(3,2))
+plot(covid_positive$asthma, main="asthma")
+plot(covid_positive$diabetes, main="diabetes")
+plot(covid_positive$hypertension, main="hypertension")
+plot(covid_positive$cardiovascular, main="cardiovascular")
+plot(covid_positive$tobacco, main="tobacco")
+
+```
+
+```{r}
+pre_existing.df <- data.frame( covid_positive$asthma,
+                               covid_positive$diabetes,
+                               covid_positive$hypertension,
+                               covid_positive$cardiovascular,
+                               covid_positive$tobacco)
+
+```
+
+```{r}
+summary(pre_existing.df)
+```
+
+
+```{r}
+ggplot(pe.events, aes(x = event, fill=pe_condition)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Events by Pre-existing condition") +
+  theme(legend.position = "right",
+        plot.title = element_text(size=16, face="bold")) +
+  geom_text(aes(label= comma(..count..)), stat="count", 
+            position = position_dodge(width = 1), vjust = -0.5, size=3) +
+  labs(x="Event (0 = Survived, 1 = Death)", y="Count",
+       fill = "pre-existing condition")
+       
+```
+
+
+
+## Create Survival plots for pre-existing conditions
+
+- Create Kaplan-Meier Survival plots 
+- Use Weibull distribution to predict survival probabilities
+
+
+
+### Asthma Survival Plot
+
+Create Kaplan-Meier survival object and plot for asthma pre-existing condition
+
+
+```{r}
+summary(asthma_cases)
+```
+
+```{r}
+asthma_calendar <- asthma_cases %>%
+  filter(date_symptoms >= as.Date("2020-03-09")) %>%
+  distinct(date_symptoms)
+  
+```
+
+
+```{r}
+asthma_calendar$time <- rownames(asthma_calendar)
+```
+
+
+```{r}
+# merge asthma_cases and asthma_calendar
+asthma_surv <- merge(asthma_cases, asthma_calendar, by.x = "date_symptoms", by.y = "date_symptoms", all.x = TRUE) %>%
+  select(event, time)
+  
+```
+
+```{r}
+asthma_surv$event <- as.integer(asthma_surv$event)
+asthma_surv$time <- as.integer(asthma_surv$time)
+```
+
+
+```{r}
+sobj.asthma <- Surv(asthma_surv$time, asthma_surv$event)
+```
+
+```{r}
+summary(sobj.asthma)
+```
+
+```{r}
+table(asthma_surv$event)
+```
+
+```{r}
+km.asthma <- survfit(sobj.asthma ~ 1, data = asthma_surv)
+```
+
+```{r}
+str(km.asthma)
+```
+
+
+```{r }
+ggsurvplot(km.asthma, title="Asthma Kaplan-Meier Plot",
+           conf.int = FALSE, 
+           risk.table = FALSE, 
+           legend="none")
+```
+
+
+
+### Hypertension Survival Plot
+
+Create Kaplan-Meier survival object and plot for hypertension pre-existing condition
+
+```{r}
+summary(hypertension_cases)
+```
+
+```{r}
+hypertension_calendar <- hypertension_cases %>%
+  filter(date_symptoms >= as.Date("2020-02-21")) %>%
+  distinct(date_symptoms)
+  
+```
+
+
+```{r}
+hypertension_calendar$time <- rownames(hypertension_calendar)
+```
+
+
+```{r}
+hypertension_surv <- merge(hypertension_cases, hypertension_calendar, by.x = "date_symptoms", by.y = "date_symptoms", all.x = TRUE) %>%
+  select(event, time)
+  
+```
+
+```{r}
+hypertension_surv$event <- as.integer(hypertension_surv$event)
+hypertension_surv$time <- as.integer(hypertension_surv$time)
+```
+
+
+```{r}
+sobj.hypertension <- Surv(hypertension_surv$time, hypertension_surv$event)
+```
+
+```{r}
+summary(sobj.hypertension)
+```
+
+```{r}
+table(hypertension_surv$event)
+```
+
+```{r}
+sobj.hypertension[1:100]
+```
+
+```{r}
+km.hypertension <- survfit(sobj.hypertension ~ 1, data = hypertension_surv)
+```
+
+```{r}
+str(km.hypertension)
+```
+
+
+```{r }
+ggsurvplot(km.hypertension, title="Hypertension Kaplan-Meier Plot",
+           conf.int = FALSE, 
+           risk.table = FALSE, 
+           surv.median.line = "hv",
+           legend="none")
+```
+
+
+
+### Cardiovascular Survival Plot
+
+Create Kaplan-Meier survival object and plot for cardiovascular pre-existing condition
+
+```{r}
+summary(cardiovascular_cases)
+```
+
+```{r}
+cardiovascular_calendar <- cardiovascular_cases %>%
+  filter(date_symptoms >= as.Date("2020-03-02")) %>%
+  distinct(date_symptoms)
+  
+```
+
+
+```{r}
+cardiovascular_calendar$time <- rownames(cardiovascular_calendar)
+```
+
+
+```{r}
+cardiovascular_surv <- merge(cardiovascular_cases, cardiovascular_calendar, by.x = "date_symptoms", by.y = "date_symptoms", all.x = TRUE) %>%
+  select(event, time)
+  
+```
+
+```{r}
+cardiovascular_surv$event <- as.integer(cardiovascular_surv$event)
+cardiovascular_surv$time <- as.integer(cardiovascular_surv$time)
+```
+
+
+```{r}
+sobj.cardiovascular <- Surv(cardiovascular_surv$time, cardiovascular_surv$event)
+```
+
+```{r}
+summary(sobj.cardiovascular)
+```
+
+```{r}
+table(cardiovascular_surv$event)
+```
+
+```{r}
+sobj.cardiovascular[1:100]
+```
+
+```{r}
+km.cardiovascular <- survfit(sobj.cardiovascular ~ 1, data = cardiovascular_surv)
+```
+
+```{r}
+str(km.cardiovascular)
+```
+
+
+```{r }
+ggsurvplot(km.cardiovascular, title="Cardiovascular Kaplan-Meier Plot",
+           conf.int = FALSE, 
+           risk.table = FALSE, 
+           surv.median.line = "hv",
+           legend="none")
+```
+
+
+### Diabetes Survival Plot
+
+Create Kaplan-Meier survival object and plot for diabetes pre-existing condition
+
+```{r}
+summary(diabetes_cases)
+```
+
+```{r}
+diabetes_calendar <- diabetes_cases %>%
+  filter(date_symptoms >= as.Date("2020-02-27")) %>%
+  distinct(date_symptoms)
+  
+```
+
+
+```{r}
+diabetes_calendar$time <- rownames(diabetes_calendar)
+```
+
+
+```{r}
+diabetes_surv <- merge(diabetes_cases, diabetes_calendar, by.x = "date_symptoms", by.y = "date_symptoms", all.x = TRUE) %>%
+  select(event, time)
+  
+```
+
+```{r}
+diabetes_surv$event <- as.integer(diabetes_surv$event)
+diabetes_surv$time <- as.integer(diabetes_surv$time)
+```
+
+
+```{r}
+sobj.diabetes <- Surv(diabetes_surv$time, diabetes_surv$event)
+```
+
+```{r}
+summary(sobj.diabetes)
+```
+
+```{r}
+table(diabetes_surv$event)
+```
+
+```{r}
+sobj.diabetes[1:100]
+```
+
+```{r}
+km.diabetes <- survfit(sobj.diabetes ~ 1, data = diabetes_surv)
+```
+
+```{r}
+str(km.diabetes)
+```
+
+
+```{r }
+ggsurvplot(km.diabetes, title="Diabetes Kaplan-Meier Plot",
+           conf.int = FALSE, 
+           risk.table = FALSE, 
+           surv.median.line = "hv",
+           legend="none")
+```
+
+
+
+### Tobacco Survival Plot
+
+Create Kaplan-Meier survival object and plot for tobacco pre-existing condition
+
+```{r}
+summary(tobacco_cases)
+```
+
+```{r}
+tobacco_calendar <- tobacco_cases %>%
+  filter(date_symptoms >= as.Date("2020-01-28")) %>%
+  distinct(date_symptoms)
+  
+```
+
+
+```{r}
+tobacco_calendar$time <- rownames(tobacco_calendar)
+```
+
+
+```{r}
+tobacco_surv <- merge(tobacco_cases, tobacco_calendar, by.x = "date_symptoms", by.y = "date_symptoms", all.x = TRUE) %>%
+  select(event, time)
+  
+```
+
+```{r}
+tobacco_surv$event <- as.integer(tobacco_surv$event)
+tobacco_surv$time <- as.integer(tobacco_surv$time)
+```
+
+
+```{r}
+sobj.tobacco <- Surv(tobacco_surv$time, tobacco_surv$event)
+```
+
+```{r}
+summary(sobj.tobacco)
+```
+
+```{r}
+table(tobacco_surv$event)
+```
+
+```{r}
+sobj.tobacco[1:100]
+```
+
+```{r}
+km.tobacco <- survfit(sobj.tobacco ~ 1, data = tobacco_surv)
+```
+
+```{r}
+str(km.tobacco)
+```
+
+
+```{r }
+ggsurvplot(km.tobacco, title="Tobacco Kaplan-Meier Plot",
+           conf.int = FALSE, 
+           risk.table = FALSE, 
+           legend="none")
+```
+
+## Calculate probabilities with Weibull distribution
+
+The Kaplan-Meir is a step plot which provides a general idea of when a median survival rate is reached for each pre-existing condition.  
+
+A Weibull probability distribution will be used to calculate specific survival probabilities for the 25%, 50%, and 75% quantiles for each pre-existing condition. We can then conclude which pre-existing condition(s) has the highest risk of death for patients with reported symptoms between January 2020 to June 30th 2020.
+
+
+### Asthma Weibull Prediction
+
+```{r}
+weibull.asthma <- survreg(sobj.asthma ~ 1, asthma_surv)
+```
+
+
+```{r}
+surv <- seq(.75, .25, by = -.25)
+t <- predict(weibull.asthma, type = "quantile", p = 1 - surv, newdata = data.frame(1))
+head(data.frame(time = t, surv = surv))
+```
+
+### Hypertension Weibull Prediction
+
+```{r}
+weibull.hypertension <- survreg(sobj.hypertension ~ 1, hypertension_surv)
+```
+
+```{r}
+t.hypertension <- predict(weibull.hypertension, type = "quantile", p = 1 - surv, newdata = data.frame(1))
+head(data.frame(time = t.hypertension, surv = surv))
+```
+
+
+### Cardiovascular Weibull Prediction
+
+```{r}
+weibull.cardiovascular <- survreg(sobj.cardiovascular ~ 1, cardiovascular_surv)
+```
+
+```{r}
+t.cardiovascular <- predict(weibull.cardiovascular, type = "quantile", p = 1 - surv, newdata = data.frame(1))
+head(data.frame(time = t.cardiovascular, surv = surv))
+```
+
+
+### Diabetes Weibull Prediction
+
+```{r}
+weibull.diabetes <- survreg(sobj.diabetes ~ 1, diabetes_surv)
+```
+
+```{r}
+t.diabetes <- predict(weibull.diabetes, type = "quantile", p = 1 - surv, newdata = data.frame(1))
+head(data.frame(time = t.diabetes, surv = surv))
+```
+
+
+
+### Tobacco Weibull Prediction
+
+```{r}
+weibull.tobacco <- survreg(sobj.tobacco ~ 1, diabetes_surv)
+```
+
+```{r}
+t.tobacco <- predict(weibull.tobacco, type = "quantile", p = 1 - surv, newdata = data.frame(1))
+head(data.frame(time = t.tobacco, surv = surv))
+```
+
+
+
+## Summary of Analysis
+
+- Five pre-existing conditions were analysed for survival rates at 25%, 50%, and 75% between January 2020 through June 30th 2020
+
+- The survival data was based on patients in Mexico which may differ in other countries
+
+- Age is a potential confounding variable which was not analysed
+
+
+## Findings
+
+
+- For asthma and tobacco use patients, the Kaplan-Meier curve is relatively flat meaning that the probabilities of survival are near 1.0 for most of the study duration compared to patients with other pre-existing conditions. Most asthma and tobacco cases are censored which means that most patients were still alive towards the end of June 2020.
+
+- Asthma and Tobacco survival times are the highest among the pre-existing conditions. By day number 205, seventy-five percent of patients with asthma died. At day number 177, seventy-five percent of tobacco users experienced a death event.
+
+- The remaining pre-existing conditions of hypertension, cardiovascular, and diabetes have very similar survival times ranging from 132 to 140 days where survival rate is 25%.  Between 132 and 140 days (four to five months), seventy-five percent of patients with hypertension, cardiovascular, and diabetes pre-existing conditions died.  
+
+- Most patients develop hypertension, cardiovascular, and diabetes later in life which supports the assumption that age is a confounding variable which warrants further analysis of adult age groups.
+
+
+
+
+## References
+
+Mexico's Open Data General Directorate of Epidemiology COVID-19 database.
+https://www.gob.mx/salud/documentos/datos-abiertos-152127
+
+Covid-19 patient pre-condition dataset. Retrieved from 
+https://www.kaggle.com/datasets/tanmoyx/covid19-patient-precondition-dataset
+
+Foley, M. 2020-07-26. My Data Science Notes. Retrieved from 
+https://bookdown.org/mpfoley1973/data-sci/survival-curve-estimation.html#weibull
+
+
+
+
