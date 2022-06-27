@@ -1,0 +1,602 @@
+---
+title: "DSC 503: Statistical Methods Assignment: Time Series Analysis"
+author: "Michael Albers"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+
+## Overview
+
+The time series pricing data for the Nasdaq and S&P 500 stock market indexes and Bitcoin cryptocurrency will be analyzed to identify trends and seasonal patterns.  Each time series for Nasdaq, S&P 500, and Bitcoin will be analyzed for the following time periods.
+
+1. Pre-Covid: 2019
+2. Covid Year One: 2020
+3. Covid Year Two: 2021
+
+In addition, monthly unemployment data will be analyzed and compared to each time series during periods of low and high unemployment.  The goal is to see how the Nasdaq, S&P 500, and Bitcoin respond during periods of low and high unemployment.
+
+
+## Data Sets
+
+- The historical prices for the Nasdaq, S&P 500, and Bitcoin cryptocurrency were acquired from Yahoo finance via a Python web scraping library called yfinance
+
+- The unemployment rate data was retrieved from the Federal Reserve Bank of St. Louis at https://fred.stlouisfed.org/series/UNRATE 
+
+
+```{r read Nasdaq file}
+nasdaq <- read.csv('data/NASDAQ.csv')
+```
+
+```{r str Nasdaq}
+str(nasdaq)
+```
+
+```{r convert nasdaq Date datatype}
+nasdaq$Date <- as.Date(nasdaq$Date)
+```
+
+```{r str nasdaq 2}
+str(nasdaq)
+```
+
+```{r read SPX500 file}
+sp500 <- read.csv('data/SPX500.csv')
+```
+
+```{r str SP500}
+str(sp500)
+```
+
+```{r sp500 Date datatype}
+sp500$Date <- as.Date(sp500$Date)
+```
+
+```{r str sp500 2}
+str(sp500)
+```
+
+```{r read BitCoin file}
+bitcoin <- read.csv('data/BitCoin.csv')
+```
+
+```{r str bitcoin}
+str(bitcoin)
+```
+
+```{r bitcoin Date datetype}
+bitcoin$Date <- as.Date(bitcoin$Date)
+```
+
+```{r str bitcoin 2}
+str(bitcoin)
+```
+
+```{r monthly unemployment file}
+unrate <- read.csv('data/UNRATE_2007_Mar2022.csv')
+
+```
+
+```{r str unrate}
+str(unrate)
+```
+```{r convert unrate Date}
+unrate$DATE <- as.Date(unrate$DATE)
+```
+
+```{r str unrate 2}
+str(unrate)
+```
+
+## View data
+
+```{r head nasdaq}
+tail(nasdaq, 10)
+```
+
+```{r head sp500}
+tail(sp500,10)
+```
+
+```{r tail bitcoin}
+tail(bitcoin, 10)
+```
+
+```{r tail unemployment rate}
+tail(unrate, 10)
+```
+
+## Pre Covid: 2019
+
+```{r filter nasdaq 2019}
+nasdaq_2019 <- nasdaq %>%
+  filter(Date >= "2019-01-01" & Date <= "2019-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+
+```{r str nasdaq_2019}
+str(nasdaq_2019)
+```
+
+
+```{r create_nasdaq_2019 ts}
+nasdaq_2019_ts <- ts(start=2019, frequency = 300, data=nasdaq_2019$Close)
+```
+
+
+```{r str nasdaq_2019_ts}
+str(nasdaq_2019_ts)
+```
+
+
+```{r nasdaq_2019_ts plot}
+ts.plot(nasdaq_2019_ts, xlab = "Year/Month", ylab = "Index Value", main = "NASDAQ Composite Index 2019")
+```
+
+
+```{r filter s&p 500}
+sp500_2019 <- sp500 %>%
+  filter(Date >= "2019-01-01" & Date <= "2019-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+
+```{r sp500 ts}
+sp500_2019_ts <- ts(start=2019, frequency = 300, data=sp500_2019$Close)
+```
+
+```{r plot sp500_2019_ts}
+ts.plot(sp500_2019_ts, xlab = "Year/Month", ylab = "Index Value", main = "S&P 500 Composite Index 2019")
+```
+
+
+```{r filter bitcoin}
+bitcoin_2019 <- bitcoin %>%
+  filter(Date >= "2019-01-01" & Date <= "2019-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+
+```{r bitcoin_2019 ts}
+bitcoin_2019_ts <- ts(start=2019, frequency = 300, data=bitcoin_2019$Close)
+```
+
+
+```{r plot bitcoin_2019_ts}
+ts.plot(bitcoin_2019_ts, xlab = "Year/Month", ylab = "Price", main = "Bitcoin Cryptocurrency 2019")
+```
+
+
+In pre-covid times, we see upward trends in all three time series for 2019.  However, the BitCoin cryptocurrency declines from mid-2019 through the end of the year.  It shows that BitCoin is not a buy and hold investment strategy during pre-covid.  The next group of plots will determine whether this assumption holds true for 2020 and 2021.
+
+
+## Covid Year One: 2020
+
+```{r Nasdaq 2020}
+nasdaq_2020 <- nasdaq %>%
+  filter(Date >= "2020-01-01" & Date <= "2020-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+
+```{r nasdaq_2020 ts}
+nasdaq_2020_ts <- ts(start=2020, frequency = 300, data=nasdaq_2020$Close)
+```
+
+
+```{r plot nasdaq_2020_ts}
+ts.plot(nasdaq_2020_ts, xlab = "Year/Month", ylab = "Index Value", main = "NASDAQ Composite Index 2020")
+```
+
+
+```{r sp500 2020} 
+sp500_2020 <- sp500 %>%
+  filter(Date >= "2020-01-01" & Date <= "2020-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+
+```{r sp500_2020 ts}
+sp500_2020_ts <- ts(start=2020, frequency = 300, data=sp500_2020$Close)
+```
+
+```{r plot sp500_2020_ts}
+ts.plot(sp500_2020_ts, xlab = "Year/Month", ylab = "Index Value", main = "S&P 500 Composite Index 2020")
+```
+
+
+```{r bitcoin 2020}
+bitcoin_2020 <- bitcoin %>%
+  filter(Date >= "2020-01-01" & Date <= "2020-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+```{r bitcoin_2020 ts}
+bitcoin_2020_ts <- ts(start=2020, frequency=300, data=bitcoin_2020$Close)
+```
+
+```{r plot bitcoin_2020_ts}
+ts.plot(bitcoin_2020_ts, xlab = "Year/Month", ylab = "Price", main = "Bitcoin Cryptocurrency 2020")
+```
+
+
+During the first year of COVID in 2020, the Nasdaq, S&P 500, and BitCoin cryptocurrency experienced a drop in the first quarter of 2020. Because each plot is on a different scale, it is hard to determine which time series was most impacted by Covid in year 2020.  By looking at the plots for Nasdaq and S&P 500, we see that both stock indices experienced sharp declines.  We cannot tell whether Bitcoin experienced a more or less significant drop in its price because its scale is drastically different from the stock indices.
+
+The next series of plots will convert the Nasdaq, S&P 500, and BitCoin time series to a common log scale in order to determine which index experienced the largest drop relative to the other series.
+
+
+## Covid Year-One Log Returns 2020
+
+
+```{r ts_df 2020}
+ts_df <- cbind(nasdaq_2020, sp500_2020$Close) %>%
+  cbind(bitcoin_2020$Close)
+```
+
+```{r head ts_df}
+head(ts_df)
+```
+
+```{r colnames ts_df}
+colnames(ts_df) <- c('Date', 'Nasdaq', 'SP500', 'Bitcoin')
+```
+
+```{r str ts_df 2020}
+str(ts_df)
+```
+
+
+```{r time series all}
+ts_all <- ts(start=2020, frequency=300, data=ts_df[2:4])
+```
+
+```{r start end 2020}
+start(ts_all)
+end(ts_all)
+```
+
+
+First, convert the close price for all three indexes to a log scale.  Then take the diff of the time series which will calculate the difference between a time observation (t) and its previous observation at t - 1.  This will be referred to as the log return
+
+```{r diff log 2020}
+logreturns <- diff(log(ts_all))
+```
+
+```{r logreturns 2020}
+plot(logreturns, main="Log Returns 2020")
+```
+
+
+The Log returns chart confirms that all three instruments, Nasdaq, S&P 500, and Bitcoin experienced a decline in the first quarter of 2020.  The log scale shows that Bitcoin experienced the sharpest drop among all three time series in the first quarter of 2020.
+
+
+
+## Covid Year-Two: 2021
+
+```{r nasdaq 2021}
+nasdaq_2021 <- nasdaq %>%
+  filter(Date >= "2021-01-01" & Date <= "2021-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+```{r nasdaq_2021 ts}
+nasdaq_2021_ts <- ts(start=2021, frequency = 300, data=nasdaq_2021$Close)
+```
+
+```{r plot nasdaq_2021_ts}
+ts.plot(nasdaq_2021_ts, xlab = "Year/Month", ylab = "Index Value", main = "NASDAQ Composite Index 2021")
+```
+
+```{r sp500 2021}
+sp500_2021 <- sp500 %>%
+  filter(Date >= "2021-01-01" & Date <= "2021-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+```{r sp500_2021 ts}
+sp500_2021_ts <- ts(start=2021, frequency = 300, data=sp500_2021$Close)
+```
+
+```{r plot sp500_2021_ts}
+ts.plot(sp500_2021_ts, xlab = "Year/Month", ylab = "Index Value", main = "S&P 500 Composite Index 2021")
+```
+
+```{r bitcoin 2021}
+bitcoin_2021 <- bitcoin %>%
+  filter(Date >= "2021-01-01" & Date <= "2021-12-31") %>%
+  subset(select = c("Date", "Close")) %>%
+  arrange(Date)
+```
+
+```{r bitcoin_2021 ts}
+bitcoin_2021_ts <- ts(start=2021, frequency = 300, data=bitcoin_2021$Close)
+```
+
+```{r plot bitcoin_2021_ts}
+ts.plot(bitcoin_2021_ts, xlab = "Year/Month", ylab = "Price", main = "Bitcoin Cryptocurrency 2021")
+```
+
+
+The NASDAQ and S&P 500 composite indexes show similar trends for 2021. The BitCoin price shows some seasonality in 2021. The raw plots appear to indicate that BitCoin was the most volatile of the three time series in 2021.
+
+
+### Remove seasonality in time series plots
+The seasonality for the three time series for 2021 will be removed by taking the diff of each time series. This will help determine which index was most volatile in 2021.  
+
+```{r ts_df_2021}
+ts_df_2021 <- cbind(nasdaq_2021, sp500_2021$Close) %>%
+  cbind(bitcoin_2021$Close)
+```
+
+
+```{r colnames ts_df 2021}
+colnames(ts_df_2021) <- c('Date', 'Nasdaq', 'SP500', 'Bitcoin')
+```
+
+```{r str ts_df 2021}
+str(ts_df_2021)
+```
+
+```{r head ts_df_2021}
+head(ts_df_2021)
+```
+
+```{r time series all 2021}
+ts_all_2021 <- ts(start=2021, frequency=300, data=ts_df_2021[2:4])
+```
+
+```{r ts_all_2021 start end}
+start(ts_all_2021)
+end(ts_all_2021)
+```
+
+```{r dif log ts_all_2021}
+logreturns_2021 <- diff(log(ts_all_2021))
+```
+
+```{r plot logreturns_2021}
+plot(logreturns_2021, main="Log Returns 2021")
+```
+
+
+After removing seasonality, the log returns in 2021 appears to have a similar pattern for all three instruments, Nasdaq, S&P 500, and BitCoin.  However, in early 2021, BitCoin shows a larger decline than the other two time series.  In early 2021, BitCoin fluctuates between -0.15 and 0.15 which is the widest movement of all three time series.
+
+
+## Unemployment Rate 2019
+
+```{r str unrate 3}
+str(unrate)
+```
+
+
+```{r unrate 2019}
+unrate_2019 <- unrate %>%
+  filter(DATE >= "2019-01-01" & DATE <= "2019-12-31") %>%
+  subset(select = c("DATE", "UNRATE")) %>%
+  arrange(DATE)
+```
+
+
+```{r head unrate_2019}
+unrate_2019
+```
+
+```{r create monthly subset function}
+monthly_df <- function(input) {
+  df_monthly <- input %>%
+    subset(Date %in% c(as.Date("2019-01-01"),as.Date("2019-02-01"),as.Date("2019-03-01"),as.Date("2019-04-01"),as.Date("2019-05-01"),as.Date("2019-06-03"),as.Date("2019-07-01"),as.Date("2019-08-01"),as.Date("2019-09-02"),as.Date("2019-10-01"),as.Date("2019-11-01"),as.Date("2019-12-02"), as.Date("2020-01-01"),as.Date("2020-02-03"),as.Date("2020-03-02"),as.Date("2020-04-01"),as.Date("2020-05-01"),as.Date("2020-06-01"),as.Date("2020-07-01"),as.Date("2020-08-03"),as.Date("2020-09-01"),as.Date("2020-10-01"),as.Date("2020-11-02"),as.Date("2020-12-01"), 
+as.Date("2021-01-01"),as.Date("2021-02-01"),as.Date("2021-03-01"),as.Date("2021-04-01"),as.Date("2021-05-03"),as.Date("2021-06-01"),as.Date("2021-07-01"),as.Date("2021-08-02"),as.Date("2021-09-01"),as.Date("2021-10-01"),as.Date("2021-11-01"),as.Date("2021-12-02")))
+
+  
+  df_monthly
+}
+```
+
+
+```{r create 2019 montly data frames}
+nasdaq_2019_monthly <- monthly_df(nasdaq_2019)
+sp500_2019_monthly <- monthly_df(sp500_2019)
+bitcoin_2019_monthly <- monthly_df(bitcoin_2019)
+```
+
+
+```{r combine 2019 monthly dataframes}
+monthly_2019_ind <- cbind(nasdaq_2019_monthly, sp500_2019_monthly$Close) %>%
+  cbind(bitcoin_2019_monthly$Close)
+```
+
+
+```{r colnames for monthly_2019_ind}
+colnames(monthly_2019_ind) <- c('Date', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r replace first day of month 2019}
+monthly_2019_ind["Date"][monthly_2019_ind["Date"] == "2019-06-03"] <- as.Date("2019-06-01")
+monthly_2019_ind["Date"][monthly_2019_ind["Date"] == "2019-09-02"] <- as.Date("2019-09-01")
+monthly_2019_ind["Date"][monthly_2019_ind["Date"] == "2019-12-02"] <- as.Date("2019-12-01")
+```
+
+
+```{r combine unrate 2019}
+monthly_2019_all <- cbind(unrate_2019, monthly_2019_ind$Nasdaq) %>%
+  cbind(monthly_2019_ind$SP500) %>%
+  cbind(monthly_2019_ind$BitCoin)
+
+```
+
+
+```{r colnames monthly_2019_all}
+colnames(monthly_2019_all) <- c('Date', 'UNRATE', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r create monthly_2019_all.ts}
+monthly_2019_all.ts <- ts(data = monthly_2019_all[2:5], start = 1, frequency = 1)
+```
+
+
+```{r plot monthly 2019 ts, fig.height=8}
+plot(monthly_2019_all.ts, main="2019 Monthly Unemployment Rate")
+```
+
+In pre-covid times, the unemployment rate is above four percent at the beginning of 2019, which is associated with lower prices in the Nasdaq, S&P 500, and BitCoin.
+
+
+## Unemployment Covid Year One 2020
+
+```{r unrate 2020}
+unrate_2020 <- unrate %>%
+  filter(DATE >= "2020-01-01" & DATE <= "2020-12-31") %>%
+  subset(select = c("DATE", "UNRATE")) %>%
+  arrange(DATE)
+```
+
+
+```{r create 2020 montly data frames}
+nasdaq_2020_monthly <- monthly_df(nasdaq_2020)
+sp500_2020_monthly <- monthly_df(sp500_2020)
+bitcoin_2020_monthly <- monthly_df(bitcoin_2020)
+```
+
+
+```{r combine 2020 monthly dataframes}
+monthly_2020_ind <- cbind(nasdaq_2020_monthly, sp500_2020_monthly$Close) %>%
+  cbind(bitcoin_2020_monthly$Close)
+```
+
+
+```{r colnames for monthly_2020_ind}
+colnames(monthly_2020_ind) <- c('Date', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r replace first day of month 2020}
+monthly_2020_ind["Date"][monthly_2020_ind["Date"] == "2020-02-03"] <- as.Date("2020-02-01")
+monthly_2020_ind["Date"][monthly_2020_ind["Date"] == "2020-03-02"] <- as.Date("2020-03-01")
+monthly_2020_ind["Date"][monthly_2020_ind["Date"] == "2020-08-03"] <- as.Date("2020-08-01")
+monthly_2020_ind["Date"][monthly_2020_ind["Date"] == "2020-11-02"] <- as.Date("2020-11-01")
+```
+
+
+```{r combine unrate 2020}
+monthly_2020_all <- cbind(unrate_2020, monthly_2020_ind$Nasdaq) %>%
+  cbind(monthly_2020_ind$SP500) %>%
+  cbind(monthly_2020_ind$BitCoin)
+
+```
+
+
+```{r colnames monthly_2020_all}
+colnames(monthly_2020_all) <- c('Date', 'UNRATE', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r create monthly_2020_all.ts}
+monthly_2020_all.ts <- ts(data = monthly_2020_all[2:5], start = 1, frequency = 1)
+```
+
+
+```{r plot monthly 2020 ts}
+plot(monthly_2020_all.ts, main="2020 Monthly Unemployment Rate")
+```
+
+
+All three instruments (Nasdaq, S&P 500, BitCoin) show sharp declines in the first quarter of 2020 when unemployment spiked to above twelve percent.
+
+
+## Unemployment Covid Year Two 2021
+
+```{r unrate 2021}
+unrate_2021 <- unrate %>%
+  filter(DATE >= "2021-01-01" & DATE <= "2021-12-31") %>%
+  subset(select = c("DATE", "UNRATE")) %>%
+  arrange(DATE)
+```
+
+
+```{r create 2021 montly data frames}
+nasdaq_2021_monthly <- monthly_df(nasdaq_2021)
+sp500_2021_monthly <- monthly_df(sp500_2021)
+bitcoin_2021_monthly <- monthly_df(bitcoin_2021)
+```
+
+
+```{r combine 2021 monthly dataframes}
+monthly_2021_ind <- cbind(nasdaq_2021_monthly, sp500_2021_monthly$Close) %>%
+  cbind(bitcoin_2021_monthly$Close)
+```
+
+
+```{r colnames for monthly_2021_ind}
+colnames(monthly_2021_ind) <- c('Date', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r replace first day of month 2021}
+monthly_2021_ind["Date"][monthly_2021_ind["Date"] == "2021-05-03"] <- as.Date("2021-05-01")
+monthly_2021_ind["Date"][monthly_2021_ind["Date"] == "2021-08-02"] <- as.Date("2021-08-01")
+monthly_2021_ind["Date"][monthly_2021_ind["Date"] == "2021-12-02"] <- as.Date("2021-12-01")
+```
+
+
+```{r combine unrate 2021}
+monthly_2021_all <- cbind(unrate_2021, monthly_2021_ind$Nasdaq) %>%
+  cbind(monthly_2021_ind$SP500) %>%
+  cbind(monthly_2021_ind$BitCoin)
+
+```
+
+
+```{r colnames monthly_2021_all}
+colnames(monthly_2021_all) <- c('Date', 'UNRATE', 'Nasdaq', 'SP500', 'BitCoin')
+```
+
+
+```{r create monthly_2021_all.ts}
+monthly_2021_all.ts <- ts(data = monthly_2021_all[2:5], start = 1, frequency = 1)
+```
+
+
+```{r plot monthly 2021 ts}
+plot(monthly_2021_all.ts, main="2021 Monthly Unemployment Rate")
+```
+
+
+## Findings
+
+- The BitCoin cryptocurrency is more volatile than the Nasdaq and S&P 500 composite indexes
+
+- Both stock indices and BitCoin trend downward as unemployment rises and trends upward as unemployment rate lowers
+
+- The Nasdaq, S&P 500, and BitCoin experienced sharp declines in the first year of Covid. BitCoin experienced the largest decline during this period
+
+- The sharp rise in 2020 unemployment rate coincides with the first year of Covid which saw all three instruments decline
+
+
+## References
+
+Download Market Data from Yahoo! Finance's API. https://pypi.org/project/yfinance/
+
+Federal Reserve Bank of St. Louis at https://fred.stlouisfed.org/series/UNRATE 
+
+
