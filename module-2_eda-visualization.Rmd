@@ -1,0 +1,370 @@
+---
+title: 'DSC 503: Statistical Methods Project 2'
+author: "Michael Albers"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r tidyverse library, message=FALSE, echo=FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+```
+
+
+### Read CSV file for Monthly Trade Retail Sales
+Monthly Trade Retail Sales dataset is provided by US Census Bureau at:<br/>
+https://www.census.gov/retail/state_retail_sales.html
+<br/>
+This dataset shows year over year retail sales percent changes by state and NAIC industry code.
+
+```{r read CSV file, message=FALSE, echo=FALSE, warning=FALSE}
+state_retail_yy <- read_csv("data/state_retail_yy.csv")
+
+```
+
+### Preview dataset and display summary information
+
+```{r preview data}
+head(state_retail_yy)
+```
+```{r summary of state_retail_yy}
+summary(state_retail_yy)
+```
+
+```{r str of state_retail_yy}
+str(state_retail_yy)
+```
+
+
+### Add new columns for state name and NAICS description to data frame
+
+#### US State Names
+
+```{r load US State names file}
+state_names = read.csv('data/state.txt', sep='|')
+```
+
+```{r preview US state names, message=FALSE, echo=FALSE, warning=FALSE}
+head(state_names)
+```
+
+```{r merge state_names}
+state_retail_yy <- merge(state_retail_yy, state_names, by.x = "stateabbr", by.y = "STUSAB", all.x = TRUE) %>%   
+select(fips,stateabbr,STATE_NAME,naics,yy201901,yy201902,yy201903,yy201904,yy201905,                                      yy201906,yy201907,yy201908,yy201909,yy201910,yy201911,yy201912,yy202001,yy202002,yy202003,yy202004,yy202005,  yy202006,yy202007,yy202008,yy202009,yy202010,yy202011,yy202012,yy202101,yy202102,yy202103,yy202104,yy202105,
+yy202106,yy202107,yy202108,yy202109,yy202110,yy202111)
+```
+
+
+```{r str of state_retail_yy 1, message=FALSE, echo=FALSE, warning=FALSE}
+str(state_retail_yy)
+```
+
+
+#### NAIC Description
+
+```{r list unique naics codes in dataset}
+unique_naics <- unique(state_retail_yy$naics)
+```
+
+
+```{r read NAICS descriptions}
+naics_names = readxl::read_xlsx('data/2017_NAICS_Descriptions.xlsx')
+  
+```
+
+```{r filter naics dataframe}
+naics_names <- naics_names %>% 
+  filter(Code %in% unique_naics)
+```
+
+```{r naics industry codes included in dataset}
+naics_names
+```
+
+```{r merge NAICS description}
+state_retail_yy <- merge(state_retail_yy, naics_names, by.x = "naics", by.y = "Code", all.x = TRUE) %>%
+  select(fips,stateabbr,STATE_NAME,naics,Title,                                                                              yy201901,yy201902,yy201903,yy201904,yy201905,                                                yy201906,yy201907,yy201908,yy201909,yy201910,yy201911,                                                                 yy201912,yy202001,yy202002,yy202003,yy202004,yy202005,                                                                yy202006,yy202007,yy202008,yy202009,yy202010,yy202011,
+yy202012,yy202101,yy202102,yy202103,yy202104,yy202105,                                                                yy202106,yy202107,yy202108,yy202109,yy202110,yy202111)
+
+```
+
+
+```{r str of state_retail_yy 2, message=FALSE, echo=FALSE, warning=FALSE}
+str(state_retail_yy)
+```
+
+
+```{r rename naics Title column}
+state_retail_yy <- state_retail_yy %>%
+  rename(naics_desc = Title)
+```
+
+```{r rename STATE_NAME column}
+state_retail_yy <- state_retail_yy %>%
+  rename(state_name = STATE_NAME)
+```
+
+
+```{r str of final state_retail_yy}
+str(state_retail_yy)
+```
+
+
+
+### Missing Data Analysis
+Missing values in the dataset exist as "S" which means not enough sufficient data was available for calculating the estimated year over year percent change in retail sales for a particular Year / Month observation.
+
+Here is an example record with missing data:
+
+**fips	stateabbr	naics	yy201901	yy201902	yy201903	yy201904	yy201905	yy201906	yy201907**<br/>
+1	    AL	    444	    **S**	        **S**	        0	        7.9	        -0.6	    -3.9	    2.4	
+
+
+#### Convert data frame to Long Format
+
+The data frame is in a wide column format which makes it difficult to remove missing values without
+removing valid values appearing in other columns such as yy201903. Converting the data frame to a long format will resolve this issue in that specific year/month missing values can be removed without removing valid values for other year/month columns.
+
+
+```{r convert dataframe to long format}
+state_retail_yy_long <- melt(as.data.table(state_retail_yy), id=1:5, measure.vars = patterns("^yy"), variable.name="yy_year_month", value.name="yy_pct_chg")
+```
+
+The data frame output listed below is the new data frame in long format.
+
+```{r preview state_retail_yy_long, message=FALSE, echo=FALSE, warning=FALSE}
+head(state_retail_yy_long, 25)
+```
+#### Report on missing values
+
+```{r filter missing values and store into new dataframe}
+missing_vaues_df <- state_retail_yy_long %>% filter(yy_pct_chg == "S")
+```
+
+```{r preview missing_vaues_df, message=FALSE, echo=FALSE, warning=FALSE}
+head(missing_vaues_df, message=FALSE, echo=FALSE, warning=FALSE)
+```
+
+```{r display effect of removing missig values from dataframe, echo=FALSE, message=FALSE, warning=FALSE}
+removed_values_rpt <- missing_vaues_df %>%
+  group_by(state_name, naics_desc) %>%
+  summarise(missing_count = n(), .groups = "drop_last") 
+  
+```
+
+
+```{r missing count report grouped by state name and naics description}
+arrange(removed_values_rpt, desc(missing_count))
+```
+```{r filter top missing counts}
+removed_values_rpt_filtered <- removed_values_rpt %>%
+  filter(missing_count > 5)
+```
+
+### Missing Data Charts
+
+```{r plot missing values report}
+ggplot(removed_values_rpt_filtered, aes(x=state_name, y=missing_count, fill=naics_desc)) +
+  geom_col(position="dodge") +
+  ggtitle("Missing year-over-year percentage by State and Industry") +
+  theme(axis.text.x = element_text(angle=60, hjust=1),
+        legend.position = "right",
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="State", y="Missing Count", fill="NAICS Description")
+
+```
+
+There are a total of 17 states with missing data values for at least six months. There are eight industries with missing values in at least six months.  The missing percentages seem to be spread out among several states and industries. This makes the analysis more difficult as opposed to a situation where the missing values were specific to a particular industry or state.
+
+The missing values will need to be removed becuase the values represent a percentage change.  Imputing the missing values with zero would create bias in the dataset and create a wrong impression that there was no percent change in retail sales for the year/month in question.  
+
+
+```{r missing values report by year/month, message=FALSE, echo=FALSE, warning=FALSE}
+ggplot(missing_vaues_df, aes(yy_year_month)) +
+  geom_bar() +
+  ggtitle("Missing year-over-year percentage by Year/Month") +
+  theme(axis.text.x = element_text(angle=60, hjust=1),
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year / Month", y="Count")
+```
+
+Most of the missing values exist in the months of April and May in 2020 and 2021.
+
+
+### Exclude missing year-over-year percentages
+
+The S-values will be removed from the original dataframe and the yy_pct_chg column datatype will be changed to a decimal datatype.
+
+
+```{r create new dataframe to exclude missing values}
+state_retail_yy_clean <- state_retail_yy_long %>% filter(yy_pct_chg != "S")
+```
+
+```{r change datatype for yy_pct_chg column in dataframe}
+state_retail_yy_clean$yy_pct_chg <- as.double(state_retail_yy_clean$yy_pct_chg)
+```
+
+```{r structure state_retail_yy_clean, message=FALSE, echo=FALSE, warning=FALSE}
+str(state_retail_yy_clean)
+```
+
+
+```{r preview state_retail_yy_clean, message=FALSE, echo=FALSE, warning=FALSE}
+head(state_retail_yy_clean)
+```
+
+### Bar Charts
+
+#### Number of Observations by State
+
+```{r Count number of valid pct year-over-year observations by State}
+ggplot(state_retail_yy_clean, aes(state_name)) +
+  geom_bar() +
+  ggtitle("Number of observations by State") +
+  theme(axis.text.x = element_text(angle=60, hjust=1),
+        legend.position = "right",
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="State", y="Count")
+
+```
+
+The number of observations by state have differences that are not extreme except for the District of Columbia. This means that industry comparisons of year-over-year percent changes across states is feasible.
+
+
+#### Number of Observations by Year/Month
+
+```{r}
+ggplot(state_retail_yy_clean, aes(yy_year_month)) +
+  geom_bar() +
+  ggtitle("Number of observations by Year/Month") +
+  theme(axis.text.x = element_text(angle=60, hjust=1),
+        legend.position = "right",
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year/Month", y="Count")
+```
+
+The number of observations in each year/month are similar except for the months of April and May in 2020 and 2021.
+This is expected since these same months had the highest number of missing values in the dataset.
+
+
+```{r create new year column}
+state_retail_yy_clean_2 <- state_retail_yy_clean %>% 
+  mutate(year = substring(yy_year_month, 3, 6)) %>%
+  mutate(year_month_label = paste(substring(yy_year_month, 3, 6),"-",substring(yy_year_month, 7, 8),sep=""))
+```
+
+
+```{r change datatypes}
+state_retail_yy_clean_2$year <- as.factor(state_retail_yy_clean_2$year)
+state_retail_yy_clean_2$year_month_label <- as.factor(state_retail_yy_clean_2$year_month_label)
+```
+
+```{r strucrture of new cleaned data frame}}
+str(state_retail_yy_clean_2)
+```
+
+### Box plots
+
+**Filter original data frame to include observations for the NY State (include all NAICS industries)**
+
+
+```{r filter for NY State}
+ny_state <- state_retail_yy_clean_2 %>%
+  filter(stateabbr == "NY")
+```
+
+```{r dimension for NY state dataframe, message=FALSE, echo=FALSE, warning=FALSE}
+str(ny_state)
+```
+
+**Filter original data frame to include observations for the NY State Motor Vehicle and Parts Industry**  
+
+
+```{r filter for NY State and Auto Industry}
+ny_auto <- state_retail_yy_clean_2 %>%
+  filter(stateabbr == "NY" & naics == '441')
+```
+
+```{r dimension of NY Auto dataframe, message=FALSE, echo=FALSE, warning=FALSE}
+str(ny_auto)
+
+```
+
+#### Box plot for NY State year-over-year retail sales (all NAICS industries)
+
+```{r create boxplot for NY State}
+ggplot(ny_state, aes(x=year, y=yy_pct_chg/100)) +
+  geom_boxplot() +
+  ggtitle("NY State Retail Sales Percent Change") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year", y="Percent Change")
+```
+
+This box plot of New York state year-over-year retail sales percent change across all NAICS industries does not reveal much.
+The next step is to create a boxplot for a single industry within NY state.
+
+
+#### Box plot for NY State year-over-year retail sales in Motor Vehicles and Parts
+
+```{r create boxplot for NY State Motor Vehicle and Parts}
+ggplot(ny_auto, aes(x=year, y=yy_pct_chg/100)) +
+  geom_boxplot() +
+  ggtitle("NY State Motor Vehicles and Parts") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year", y="Percent Change")
+```
+
+This box plot shows an increase in the median year-over-year retail sales percent change in NY state for Motor Vehicles and Parts since 2019. But it raises the question whether people purchased more new cars, or did they hold onto their existing cars while purchasing more auto parts?
+
+
+```{r create dataframe for USA Auto Industry}
+usa_auto <- state_retail_yy_clean_2 %>%
+  filter(stateabbr %in% c("USA") & naics == '441')
+```
+
+```{r convert stateabbr to factor}
+usa_auto$stateabbr = as.factor(usa_auto$stateabbr)
+```
+
+
+```{r str us_auto, message=FALSE, echo=FALSE, warning=FALSE}
+str(usa_auto)
+```
+
+### Line Charts
+
+```{r USA retail auto sales}
+ggplot(usa_auto, aes(x=year_month_label, y=yy_pct_chg/100)) +
+  geom_line(aes(group=2), color="red") +
+  expand_limits(y = 0) +
+  ggtitle("United States Motor Vehicle and Parts") +
+  theme(axis.text.x = element_text(angle=60, hjust=1),
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year/Month", y="YY Pct Change")
+
+```
+
+The national aggregate of year-over-year retail sales percent changes for Motor Vehicle and Parts shows a steady trend for 2019. In 2020, we see a sharp decline in the year-over-year retail sales percent change for the month of April in 2020. In April of 2021, we see a sharp increase in year-over-year retail sales percent change.  This does not indicate a sharp increase in retail sales. Because year-over-year percent change in the prior year for 2020-04 was low, we see a larger percentage change 12 months later in 2021-04.
+
+
+```{r NY Auto retail sales}
+ggplot(ny_auto, aes(x=year_month_label, y=yy_pct_chg/100)) +
+  geom_line(aes(group=1), color="green") +
+  expand_limits(y = 0) +
+  ggtitle("New York State Motor Vehicle and Parts") +
+  theme(axis.text.x = element_text(angle=60, hjust=1), 
+        legend.position="none",
+        plot.title = element_text(size=16, face="bold")) +
+  labs(x="Year/Month", y="YY Pct Change")
+```
+
+In this line chart, the monthly trend in year-over-year retail sales percent changes for NY state is similar to the nation-wide retail year-over-year retail sales percent changes.
+
+
+### Summary
+
+In this analysis, the national line chart for Motor Vehical and Parts shows a sharp decline in the month of April in 2020. The analysis can be expanded to include other industries to see if a similar trend exists at the national level.  The industry averages of year-over-year retail sales percent changes can be compared at the national level using an ANOVA statistical test. The ANOVA test can also be run for NAIC industries within each state to see if similar trends exist within each state.
+
+

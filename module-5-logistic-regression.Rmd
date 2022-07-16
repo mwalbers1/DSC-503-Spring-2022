@@ -1,0 +1,524 @@
+---
+title: "DSC 503: Statistical Methods Project - Logistic Regression"
+author: "Michael Albers"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggcorrplot)
+```
+
+
+## Overview
+The purpose of this assignment is to build a logistic regression model for predicting whether a stock’s rating is either a Downgrade or Upgrade based on fundamental equity metrics.  The fundamental measures used in this analysis are: 
+
+1. Price-to-Earnings (P/E) ratio
+2. Earnings per share
+3. Net profit margin
+4. Return on Assets
+5. Current ratio 
+6. Debt-to-Equity ratio 
+7. Cash ratio 
+8. Debt-to-Assets ratio
+9. Return on Equity ratio
+
+## Dataset
+The dataset was created from the following sources:
+
+**Market Watch Ratings**
+
+The stock ratings of Upgrades/Downgrades were accessed from the marketwatch.com website via a web scraping function in Excel which was run manually every day during the week of April 11th.
+
+**Financial Data**
+
+An API call was made to the polygon.io website to pull 2021 annual reports for each company in the market-watch rating list. The annual report data included data attributes from the balance sheet, income statement, cash flows, and comprehensive income statements.
+
+
+**Pricing Data**
+
+An API call was made to the polygon.io website which returned the closing price as of 12/31/2021 for each ticker in the list of market-watch stock ratings.
+
+
+
+## Pre-processing 
+Merge **Market Watch Ratings, Financial Data, and Pricing Data** files into a single data frame.
+
+
+```{r read market-watch ratings}
+market_watch_ratings <- read.csv('data/marketwatch_stock_ratings.csv')
+```
+
+```{r head marketwatch ratings}
+head(market_watch_ratings)
+```
+```{r str marketwatch ratings}
+str(market_watch_ratings)
+```
+
+```{r rename columns}
+colnames(market_watch_ratings) <- c('symbol', 'company', 'rating')
+```
+
+```{r str marketwatch ratings 2}
+str(market_watch_ratings)
+```
+
+
+
+```{r read financial data}
+financial_data <- read.csv('data/marketwatch_financial_data_wide.csv')
+```
+
+```{r head financial data}
+head(financial_data)
+```
+```{r rename first column}
+colnames(financial_data)[1] <- "unit"
+```
+
+
+```{r str financial data}
+str(financial_data)
+```
+
+
+
+```{r read pricing data}
+pricing_data <- read.csv('data/marketwatch_prices.csv')
+```
+
+
+```{r head pricing data}
+head(pricing_data)
+```
+```{r str pricing_data}
+str(pricing_data)
+```
+
+
+```{r merge stock ratings with financial data}
+market_watch_1 <- merge(market_watch_ratings, financial_data, by.x = "symbol", by.y = "ticker")
+```
+
+```{r str market_watch_1}
+str(market_watch_1)
+```
+
+```{r merge with pricing data}
+# merge(market_watch_ratings, financial_data, by.x = "symbol", by.y = "ticker")
+market_watch_full <- merge(market_watch_1, pricing_data, by.x = "symbol", by.y = "ticker")
+```
+
+```{r str of full dataframe}
+str(market_watch_full)
+```
+
+
+## Calculate Financial Ratios
+
+```{r Price-to-Earnings Ratio}
+market_watch_full$pe_ratio <- ifelse(market_watch_full$Basic_Earnings_Per_Share != 0, market_watch_full$close / market_watch_full$Basic_Earnings_Per_Share, NA)
+```
+
+```{r Net profit Margin}
+market_watch_full$net_profit_margin <- ifelse(market_watch_full$Revenues != 0, market_watch_full$Net_Income_Loss / market_watch_full$Revenues, NA)
+```
+
+```{r Return on Assets}
+market_watch_full$roa_ratio <- ifelse(market_watch_full$Assets != 0, market_watch_full$Net_Income_Loss / market_watch_full$Assets, NA)
+```
+
+```{r Current Ratio}
+market_watch_full$current_ratio <- ifelse(market_watch_full$Current_Liabilities != 0, market_watch_full$Current_Assets / market_watch_full$Current_Liabilities, NA)
+```
+
+```{r Debt to Equity Ratio}
+market_watch_full$de_ratio <- ifelse(market_watch_full$Equity != 0, market_watch_full$Liabilities / market_watch_full$Equity, NA )
+```
+
+```{r Cash Ratio}
+market_watch_full$cash_ratio <- ifelse(market_watch_full$Current_Liabilities != 0, market_watch_full$Net_Cash_Flow / market_watch_full$Current_Liabilities, NA)
+```
+
+```{r Debt to Assets Ratio}
+market_watch_full$da_ratio <- ifelse(market_watch_full$Assets != 0, market_watch_full$Liabilities / market_watch_full$Assets)
+```
+
+```{r Return on Equity}
+market_watch_full$roe_ratio <- ifelse(market_watch_full$Equity != 0, market_watch_full$Net_Income_Loss / market_watch_full$Equity, NA) 
+```
+
+## Exporatory Data Analysis (EDA)
+Check for missing data and outliers
+
+
+```{r create subset of data frame}
+stocks_df <- subset(market_watch_full, select = c(symbol, Basic_Earnings_Per_Share, pe_ratio, net_profit_margin, roa_ratio, current_ratio, de_ratio, cash_ratio, da_ratio, roe_ratio, rating))
+```
+
+
+```{r stocks data frame}
+str(stocks_df)
+```
+
+```{r get missing values}
+missing_eps <- stocks_df %>% 
+  filter(is.na(Basic_Earnings_Per_Share))
+
+missing_pe_ratio <- stocks_df %>%
+  filter(is.na(pe_ratio))
+
+missing_net_profit_margin <- stocks_df %>%
+  filter(is.na(net_profit_margin))
+
+missing_roa_ratio <- stocks_df %>%
+  filter(is.na(roa_ratio))
+
+missing_current_ratio <- stocks_df %>%
+  filter(is.na(current_ratio))
+
+missing_de_ratio <- stocks_df %>%
+  filter(is.na(de_ratio))
+
+missing_cash_ratio <- stocks_df %>%
+  filter(is.na(cash_ratio))
+
+missing_da_ratio <- stocks_df %>%
+  filter(is.na(da_ratio))
+
+missing_roe_ratio <- stocks_df %>%
+  filter(is.na(roe_ratio))
+
+missing_ratings <- stocks_df %>%
+  filter(is.na(rating))
+
+```
+
+
+```{r dimensions of missing data frames}
+dim(missing_cash_ratio)
+dim(missing_current_ratio)
+dim(missing_da_ratio)
+dim(missing_de_ratio)
+paste('missing eps ', dim(missing_eps))
+
+print(paste('missing net_profit_margin ', dim(missing_net_profit_margin)))
+
+print(paste('missing pe ratio ', dim(missing_pe_ratio)))
+
+dim(missing_ratings)
+dim(missing_roa_ratio)
+dim(missing_roe_ratio)
+
+```
+
+
+```{r companies missing pe ratio}
+missing_pe_ratio
+```
+
+
+```{r check prices and EPS from original data frame}
+market_watch_full[is.na(market_watch_full$Basic_Earnings_Per_Share), c("symbol", "close", "Basic_Earnings_Per_Share") ]
+```
+
+### Missing Data
+- The SRRA record will be removed since it is missing Basic Earnings Per share, PE ratio, and Net profit margin.  
+
+- The missing Earnings Per Share (EPS) and PE ratios for the remaining nine tickers will be acquired from the Yahoo finance website.
+
+
+```{r read yahoo finance data}
+yahoo_finance_data <- read.csv('data/yahoo_finance_data.csv')
+```
+
+```{r rename symbol column}
+colnames(yahoo_finance_data)[1] = "Symbol"
+
+```
+
+
+```{r str yahoo finance data}
+str(yahoo_finance_data)
+```
+
+```{r subset yahoo data frame}
+yahoo_finance_data_subset <- subset(yahoo_finance_data, select = c(Symbol, EPS.Est.Next.Year, Forward.P.E))
+```
+
+```{r head yahoo subset}
+str(yahoo_finance_data_subset)
+```
+
+
+```{r merge stocks data frame with yahoo}
+stocks_df_new <- merge(stocks_df, yahoo_finance_data_subset, by.x = "symbol", by.y = "Symbol", all.x = TRUE)
+```
+
+
+```{r fill missing column values}
+stocks_df_new[is.na(stocks_df_new$Basic_Earnings_Per_Share),c("Basic_Earnings_Per_Share")] <- stocks_df_new[is.na(stocks_df_new$Basic_Earnings_Per_Share),c("EPS.Est.Next.Year")]
+
+stocks_df_new[is.na(stocks_df_new$pe_ratio),c("pe_ratio")] <- stocks_df_new[is.na(stocks_df_new$pe_ratio),c("Forward.P.E")]
+```
+
+
+```{r remove SRRA}
+stocks_df_clean <- subset(stocks_df_new, !(symbol %in% c('SRRA')), select =  c("symbol", "Basic_Earnings_Per_Share", "pe_ratio", "net_profit_margin", "roa_ratio", "current_ratio", "de_ratio", "cash_ratio", "da_ratio", "roe_ratio", "rating"))
+```
+
+
+```{r confirm that no missing data exists}
+count(stocks_df_clean[is.na(stocks_df_clean)==TRUE,])
+```
+
+
+```{r str on clean data frame}
+summary(stocks_df_clean)
+```
+
+
+### Outliers
+Box plots for each financial ratio by rating will be created to detect outliers in the data set.
+
+
+#### Box Plots
+
+
+```{r boxplot basic eps}
+ggplot(stocks_df_clean, aes(x=rating, y=Basic_Earnings_Per_Share, fill=rating)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Earnings Per Share by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Basic Earnings Per Share")
+
+```
+
+
+
+```{r boxplot on pe ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=pe_ratio)) +
+  geom_boxplot() +
+  ggtitle("PE Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Price-to-Earnings Ratio")
+```
+
+There is one stock in the data set with a PE ratio of over -3,000.  This is also reflected in the summary report of the data frame where the min value for PE ratio is -3070.00.  This particular company should be removed.
+
+```{r boxplot for net_profit_margin}
+ggplot(stocks_df_clean, aes(x=rating, y=net_profit_margin*100)) +
+  geom_boxplot() +
+  ggtitle("Net Profit Margin by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Net Profit Margin")
+```
+
+```{r boxplot for roa_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=roa_ratio*100, fill=rating)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Return-On-Assets Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="roa_ratio")
+```
+
+```{r boxplot current_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=current_ratio, fill=rating)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Current Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Current Ratio")
+```
+
+```{r boxplot de_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=de_ratio)) +
+  geom_boxplot() +
+  ggtitle("Debt-to-Equity Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Debt-to-Equity Ratio")
+```
+
+```{r cash_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=cash_ratio, fill=cash_ratio)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Cash Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Cash Ratio")
+```
+
+```{r boxplot on da_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=da_ratio, fill=rating)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Debt-to-Assets Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Debt-to-Assets")
+```
+
+```{r boxplot on roe_ratio}
+ggplot(stocks_df_clean, aes(x=rating, y=roe_ratio, fill=rating)) +
+  geom_boxplot() +
+  theme(legend.position = "None") +
+  ggtitle("Return-on-Equity Ratio by Rating") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Return-on-Equity")
+```
+
+
+The box plots reveal a lot more variability among Downgrades as compared to Upgrades.  This shows that companies that are downgraded experience wide declines in their fundamentals.  The stocks that are rated as upgrades are stable and maintain their fundamentals over a period of time.  There are rare cases in which we see outliers for upgrades, indicating that a few companies will have exceptional annual performance metrics such as net profit margin. 
+
+Because the dataset has far more downgrades than upgrades and most outliers occur on downgrades, the downgrades with extreme fundamental ratios will be removed without affecting the balance of the dataset.  The only concern is that it will make the data set smaller which may impact the effectiveness of a logistic regression model.
+
+### Remove Downgrades Outliers
+
+```{r filter-out outliers for downgrades}
+stocks_filtered_downgrades <- stocks_df_clean %>%
+  filter(rating == 'Downgrades') %>%
+  filter(pe_ratio > -3000) %>%
+  filter(roa_ratio*100 > -100) %>%
+  filter(current_ratio < 8) %>%
+  filter(de_ratio > -20) %>%
+  filter(de_ratio < 30) %>%
+  filter(cash_ratio < 5) %>%
+  filter(roe_ratio < 5) %>%
+  filter(roe_ratio > -5)
+
+```
+
+### Remove Upgrades Outliers
+
+```{r filter-out outliers for upgrades}
+stocks_filtered_upgrades <- stocks_df_clean %>%
+  filter(rating == 'Upgrades') %>%
+  filter(net_profit_margin*100 < 2000) %>%
+  filter(da_ratio < 3)
+```
+
+
+```{r append filtered data frames}
+stocks_appended <- rbind(stocks_filtered_downgrades, stocks_filtered_upgrades)
+```
+
+```{r str appended data frame}
+str(stocks_appended)
+```
+
+
+```{r show bar chart on ratings}
+ggplot(stocks_appended, aes(x=rating, fill=rating)) +
+  geom_bar() +
+  theme(legend.position = "None") +
+  ggtitle("Downgrades v. Upgrades") +
+  theme(plot.title = element_text(size=16, face="bold")) +
+  labs(x="Rating", y="Count")
+
+```
+
+
+There were ten outliers removed for stocks rated as Downgrades and two outliers for Upgrades were removed. The data set now has 101 observations and the number of Downgrades is still more than double the number of Upgrades.
+
+
+## Collinearity check
+
+A correlation matrix will be created for the continuous variables to check for multi-collinearity in the data set.
+
+```{r correlation matrix}
+corr.matrix <- cor(subset(stocks_appended, select = -c(symbol, rating)))
+```
+
+```{r corr.matrix output}
+corr.matrix
+```
+
+
+### Heatmap
+
+```{r heatmap}
+ggcorrplot(corr.matrix, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap for Stock Ratios")
+```
+
+
+The heatmap shows low to medium correlations among the fundamental measures. It can be assumed that little collinearity exists in the dataset.
+
+
+## Logistic Regression Model
+
+
+### Add integer rating column (0 = Upgrades, 1 = Downgrades)
+
+```{r convert rating for logistic model}
+stocks_appended$rating_num <- ifelse(stocks_appended$rating == 'Upgrades', 0, 1)
+```
+
+```{r str stocks_appended rating}
+str(stocks_appended)
+```
+
+
+### Create Logistic Regression model for the following ratios
+
+- Price-to-Earnings (PE)
+- Net Profit Margin
+- Return on Assets
+- Current ratio
+- Debt-to-Equity
+- Cash ratio
+- Debt-to-Assets
+- Return-on-Equity
+
+
+```{r create logistic_model}
+logistic_model <- glm(rating_num ~ pe_ratio + net_profit_margin + roa_ratio + current_ratio + de_ratio + cash_ratio + da_ratio + roe_ratio, data=stocks_appended, family = "binomial")
+summary(logistic_model)
+```
+
+
+The logistic model revealed only one significant predictor variable which was the debt-to-equity ratio (de_ratio).  Since the Price-to-Earnings ratio is calculated from Earnings Per Share, the Basic_Earnings_Per_Share variable was not included in the model to avoid any overlap.  The de_ratio coefficient indicates that the log of the odds of being a downgrade decreases by -.24 when debt-to-equity increases by one unit. 
+
+
+## Findings
+An attempt was made to classify stocks in this dataset using the most common ratios in stock fundamental analysis.  All six measures in this dataset are utilized by analysts to rate stocks.
+
+A logistic regression model with only one predictor of debt-to-equity ratio is not adequate for classifying companies as either Downgrades or Upgrades.  There are several successful companies with high debt-to-equity ratios.  This dataset was imbalanced in that there were far more downgrades than upgrades.  There was a lot of variability and outliers among the downgraded companies in this dataset.  Although an attempt was made to remove extreme outliers, it did not yield more than one significant predictor.  A different sampling technique could have been used by taking a stratified sample across industries.  A larger sample size could have also produced a better model.
+
+
+## Limitations
+The stock ratings that were scraped from the market-watch website were created by outside firms such as JP Morgan, Goldman Sachs, and many other rating agencies. This means that stocks in this dataset were rated differently and there was no uniform criteria in determining whether a stock was a downgrade or upgrade. Each research analyst firm has its own proprietary methods for downgrading or upgrading stocks. There may be bias in these ratings as well since some rating agencies will rate a stock as an upgrade in order to encourage investors to increase their positions in that company.  This analysis did not include the rating agencies that rated the stocks. The web scraper only grabbed the ticker and rating for the day that the scraping program ran.
+
+The dataset was small for this analysis and it was weighted towards Downgrades, which may have limited the ability of the model to find other significant predictors.
+
+
+## References
+
+**Market Watch Ratings Data**
+
+https://www.marketwatch.com/tools/upgrades-downgrades
+
+**Stock Prices Data**
+
+https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
+
+**Financial Data (Balance sheet, Income statement, Statement of Cash flows, Comprehensive income)**
+
+https://polygon.io/docs/stocks/get_vx_reference_financials
+
+**Yahoo Finance Data**
+
+https://finance.yahoo.com/quotes/APO,AVDX,BCRX,ENJY,LABP,OSK,RPTX,SRRA,THFF,WHD/view/fv
+
+ELMERRAJI, J. Updated January 27, 2022. Guide to Financial Ratios. Retrieved from https://www.investopedia.com/articles/stocks/06/ratios.asp
+
+

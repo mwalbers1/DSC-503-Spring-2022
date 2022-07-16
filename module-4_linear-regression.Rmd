@@ -1,0 +1,646 @@
+---
+title: "Module 4 Assignment"
+author: "Michael Albers"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output: 
+  html_document:
+    df_print: paged
+    fig_width: 12
+    fig_height: 12
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggcorrplot)
+library(plyr)
+```
+
+# Multiple Linear Regression
+Perform a multiple linear regression analysis to predict monthly auto sales based on data collected from the the United States Bureau of Transportation.
+ 
+
+## Dataset Information
+The data set called MTS.csv was downloaded from the United States Bureau of Transportation at https://data.bts.gov/Research-and-Statistics/MTS/j4n6-u5xg/data. 
+
+The Monthly Transportation Statistics is a compilation of national statistics on transportation. The Bureau of Transportation Statistics brings together the latest data from across the federal government and transportation industry. The MTS.csv file consists of 136 attributes including air, auto, rail transportation, construction spending, unemployment rate, and truck and auto sales. The observations for each month of the year dates back to 1947.  This analysis will analyze observations for the past eleven years.
+ 
+The MTS.csv data file was stored into a Google Cloud BigQuery table. Then SQL queries were executed in ordered to horizontally partition the table into eight separate CSV data files, each file containing all observations from the original data file with a subset of columns from the original file.
+
+The definitions for the variables is at https://www.census.gov/construction/c30/definitions.html
+
+ 
+### Load Monthly Trade Statistics (MTS) files into separate data frames 
+There are eight CSV files containing a unique set of variables by month.
+
+
+```{r load first data frame}
+mts_1 <- read.csv("data/mts_1.csv")
+
+```
+
+```{r load second data frame}
+mts_2 <- read.csv("data/mts_2.csv")
+
+```
+
+```{r load third data frame}
+mts_3 <- read.csv("data/mts_3.csv")
+
+```
+
+```{r load fourth data frame}
+mts_4 <- read.csv("data/mts_4.csv")
+
+```
+
+```{r load fifth data frame}
+mts_5 <- read.csv("data/mts_5.csv")
+
+```
+
+
+```{r load sixth data frame}
+mts_6 <- read.csv("data/mts_6.csv")
+
+```
+
+
+```{r load seventh data frame}
+mts_7 <- read.csv("data/mts_7.csv")
+
+```
+
+```{r load eighth data frame}
+mts_8 <- read.csv("data/mts_8.csv")
+
+```
+
+## Filter observations for the past eleven years
+
+```{r define filter function}
+
+#
+# filter data frame parameter for a range of years
+#
+filter_obs <- function(mts_param, start_year, end_year) {
+  mts_result <- mts_param %>% 
+    mutate(year = as.integer(format(as.Date(mts_param$Date),"%Y"))) %>%
+    filter(year >= start_year) %>%
+    filter(year < end_year)
+  
+  mts_result
+}
+
+```
+
+
+```{r include past 11 years}
+
+mts_p11_1 <- filter_obs(mts_1, 2011, 2022) 
+mts_p11_2 <- filter_obs(mts_2, 2011, 2022)
+mts_p11_3 <- filter_obs(mts_3, 2011, 2022)
+mts_p11_4 <- filter_obs(mts_4, 2011, 2022)
+mts_p11_5 <- filter_obs(mts_5, 2011, 2022)
+mts_p11_6 <- filter_obs(mts_6, 2011, 2022)
+mts_p11_7 <- filter_obs(mts_7, 2011, 2022)
+mts_p11_8 <- filter_obs(mts_8, 2011, 2022)
+
+```
+
+```{r structure of data frame}
+str(mts_p11_1)
+
+```
+
+
+## Identify response variable and independent variables
+
+The response (dependent) variable will be the Auto Sales column. Overall, there are over 130 independent variables. A pre-screening will be done by calculating the pearson correlation between Auto_sales and each independent variable. The variables having the strongest correlation to Auto Sales that are related to the auto industry will be considered for the subsequent linear regression model.
+
+## Data preparation for Correlation matrices
+
+The missing values will need to be converted to zero prior to calculating correlations with the dependent variable, Auto Sales. 
+
+### Load numeric variables into new dataframe
+
+Define a function which takes in a data frame as a parameter and converts the NA values to zero, and then returns a new clean data frame.  The clean data frame will then be used to calculate the pearson correlation coefficients.
+
+```{r create input dataframe to corr function}
+#
+# Create new data frame which replaces NA with zeros
+#
+clean_df <- function(data) {
+  
+  # define function to replace NA with zero values
+  dplyr_coalesce <- function(x) { mutate_all(x, ~coalesce(., 0)) }
+  
+  # replace NA with zero in data frame argument
+  results <- dplyr_coalesce(data)
+  results
+}
+
+
+```
+
+
+```{r get predictor variables }
+mts_predictors_1 <- subset(mts_p11_1, select = -c(Date, year))
+mts_predictors_2 <- subset(mts_p11_2, select = -c(Date, year))
+mts_predictors_3 <- subset(mts_p11_3, select = -c(Date, year))
+mts_predictors_4 <- subset(mts_p11_4, select = -c(Date, year))
+mts_predictors_5 <- subset(mts_p11_5, select = -c(Date, year))
+mts_predictors_6 <- subset(mts_p11_6, select = -c(Date, year))
+mts_predictors_7 <- subset(mts_p11_7, select = -c(Date, year))
+mts_predictors_8 <- subset(mts_p11_8, select = -c(Date, year))
+
+```
+
+```{r structure of mts predictors data frame, echo=FALSE, message=FALSE, warning=FALSE}
+str(mts_predictors_1)
+```
+The clean_df function is called on each of the predictors data frames (i.e. mts_predictors_1) to convert NA values to zeros. The clean predictor data frames will then be used to calculate correlations between the variables.
+
+```{r call clean_df method}
+
+clean.pred_1 = clean_df(mts_predictors_1)
+clean.pred_2 = clean_df(mts_predictors_2)
+clean.pred_3 = clean_df(mts_predictors_3)
+clean.pred_4 = clean_df(mts_predictors_4)
+clean.pred_5 = clean_df(mts_predictors_5)
+clean.pred_6 = clean_df(mts_predictors_6)
+clean.pred_7 = clean_df(mts_predictors_7)
+clean.pred_8 = clean_df(mts_predictors_8)
+
+```
+
+```{r view structure of clean predictor data frame}
+str(clean.pred_1)
+```
+
+
+## Correlation matrices
+
+The Pearson correlation coefficient matrix is calculated for the clean data frames of predictor variables.
+
+```{r create correlation matrix data frame, warning=FALSE}
+
+corr.matrix_1 <- cor(clean.pred_1)
+corr.matrix_2 <- cor(clean.pred_2)
+corr.matrix_3 <- cor(clean.pred_3)
+corr.matrix_4 <- cor(clean.pred_4)
+corr.matrix_5 <- cor(clean.pred_5)
+corr.matrix_6 <- cor(clean.pred_6)
+corr.matrix_7 <- cor(clean.pred_7)
+corr.matrix_8 <- cor(clean.pred_8)
+
+```
+
+
+
+## Heatmaps
+
+Heatmaps will be created to visualize correlations between Auto Sales and the independent variables.  
+
+
+```{r first heatmap, fig.width=12, fig.height=12}
+
+ggcorrplot(corr.matrix_1, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 1")
+
+```
+
+
+```{r corr matrix 1}
+corr.matrix_1[,'Auto_sales']
+```
+
+
+
+```{r second heatmap, fig.width=14, fig.height=14}
+
+ggcorrplot(corr.matrix_2, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 2")
+
+```
+
+```{r corr matrix 2}
+corr.matrix_2[,"Auto_sales"]
+```
+
+
+
+```{r third heatmap, fig.width=15, fig.height=15}
+
+ggcorrplot(corr.matrix_3, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 3")
+
+
+```
+
+```{r corr matrix 3}
+corr.matrix_3[,"Auto_sales"]
+```
+
+
+```{r fourth heatmap, fig.width=15, fig.height=15}
+
+ggcorrplot(corr.matrix_4, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 4")
+
+```
+
+```{r corr matrix 4}
+corr.matrix_4[,"Auto_sales"]
+```
+
+
+```{r Fifth heatmap, fig.width=15, fig.height=15}
+
+ggcorrplot(corr.matrix_5, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 5")
+
+
+```
+
+```{r corr matrix 5}
+corr.matrix_5[,"Auto_sales"]
+```
+
+
+```{r sixth heat map, fig.width=16, fig.height=16}
+
+ggcorrplot(corr.matrix_6, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 6")
+
+```
+
+```{r corr matrix 6}
+corr.matrix_6[,"Auto_sales"]
+```
+
+
+```{r Seventh heatmap, fig.width=16, fit.height=16}
+
+ggcorrplot(corr.matrix_7, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 7")
+
+```
+
+```{r corr matrix 7}
+corr.matrix_7[,"Auto_sales"]
+```
+
+
+
+```{r Eighth heatmap, fig.width=16, fit.height=16}
+
+ggcorrplot(corr.matrix_8, type = "lower", lab = TRUE) +
+  ggtitle("Heatmap 8")
+
+```
+
+```{r corr matrix 8}
+corr.matrix_8[,"Auto_sales"]
+```
+
+
+## Screening of Independent variables
+
+There are over 130 variables to screen for predicting Auto Sales using multiple linear regression. The variables are sub-divided into eight separate correlation matrices. 
+
+For a variable to be selected, it will have a correlation with Auto Sales of 0.50 or higher and the variable must be related somehow to the auto industry. Throughout the screening process, there were variables that had correlation values above 0.50, but belonged to different industries or didn't appear related to auto sales. There were other variables not selected because further investigation was required to see whether it made sense intuitively to select that variable.
+
+
+```{r select independent variables based on correlaton }
+
+feat.matrix_1 <- corr.matrix_1["Auto_sales", c(
+  "Freight_Rail_Carloads",
+  "Transit_Ridership___Other_Transit_Modes___Adjusted",
+"Transit_Ridership___Fixed_Route_Bus___Adjusted",
+"Transit_Ridership___Urban_Rail___Adjusted"
+  )] 
+
+
+feat.matrix_3 <- corr.matrix_3["Auto_sales", c("State_and_Local_Government_Construction_Spending___Mass_Transit")]
+
+feat.matrix_5 <- corr.matrix_5["Auto_sales", c("State_and_Local_Government_Construction_Spending___Automotive")]
+
+feat.matrix_6 <- corr.matrix_6["Auto_sales", c("Labor_Force_Participation_Rate___Seasonally_Adjusted")]
+
+feat.matrix_7 <- corr.matrix_7["Auto_sales", c("Passenger_Rail_Passenger_Miles")]
+
+```
+
+```{r combine matrices}
+combied.matrix <- rbind.fill.matrix(feat.matrix_1, feat.matrix_3, feat.matrix_5, feat.matrix_6, feat.matrix_7)
+
+```
+
+```{r chosen preductors}
+selected.predictors <- c("Freight_Rail_Carloads",
+"Transit_Ridership___Other_Transit_Modes___Adjusted",
+"Transit_Ridership___Fixed_Route_Bus___Adjusted",
+"Transit_Ridership___Urban_Rail___Adjusted","State_and_Local_Government_Construction_Spending___Mass_Transit", "State_and_Local_Government_Construction_Spending___Automotive", "Labor_Force_Participation_Rate___Seasonally_Adjusted",
+"Passenger_Rail_Passenger_Miles")
+```
+
+
+```{r data.frame from combined matrix}
+auto.sales.corr <- data.frame(combied.matrix, 
+                              row.names = selected.predictors)
+
+```
+
+
+```{r rename data frame column}
+names(auto.sales.corr) <- "Auto_sales"
+
+```
+
+#### Predictor variables with a correlation plus/minus 0.50
+
+
+```{r sort data frame}
+
+auto.sales.corr[order(auto.sales.corr$Auto_sales),,drop=FALSE]
+
+```
+
+```{r load original data file}
+
+mts_table <- read.csv("data/mts_table.csv")
+
+```
+
+```{r dim mts_table, echo=FALSE, message=FALSE, warning=FALSE}
+dim(mts_table)
+```
+
+
+
+### Load selected variables into new data frame
+
+Extract the selected variables from the original data frame of monthly trade statistics.  
+
+```{r monthly total sales for selected predictors}
+
+mts.selected.subset <- subset(mts_table, select = c("Date", "Auto_sales", selected.predictors))
+  
+
+```
+
+```{r preview mts.selected.subset, echo=FALSE, message=FALSE, warning=FALSE}
+head(mts.selected.subset)
+```
+
+
+```{r filter for start and end year}
+mts.data.predictions <- filter_obs(mts.selected.subset, 2011, 2022) %>%
+  subset(select = -c(year))
+
+```
+
+```{r str mts data filtered}
+str(mts.data.predictions)
+```
+
+
+## Check for missing data
+
+
+```{r check for missing data}
+missing_vaues_df <- mts.data.predictions %>% 
+  filter(is.na(Auto_sales)) %>%
+  filter(is.na(Freight_Rail_Carloads)) %>%
+  filter(is.na(Transit_Ridership___Other_Transit_Modes___Adjusted)) %>%
+  filter(is.na(Transit_Ridership___Fixed_Route_Bus___Adjusted)) %>%
+  filter(is.na(Transit_Ridership___Urban_Rail___Adjusted)) %>%
+  filter(is.na(State_and_Local_Government_Construction_Spending___Mass_Transit)) %>%
+  filter(is.na(State_and_Local_Government_Construction_Spending___Automotive)) %>%
+  filter(is.na(Labor_Force_Participation_Rate___Seasonally_Adjusted)) %>%
+  filter(is.na(Labor_Force_Participation_Rate___Seasonally_Adjusted)) 
+  
+```
+
+```{r count missing values}
+dim(missing_vaues_df)
+```
+There are no missing values in the data.
+
+
+## Scatter Plots
+
+A series of scatter plots will be created to determine whether a linear relationship exists between the independent variables and Auto Sales.
+
+```{r data frame for plot}
+plot.df <- subset(mts.data.predictions, select = -c(Date))
+```
+
+```{r make copy of plot.df}
+plot.df.copy <- plot.df
+```
+
+
+```{r plot 3, fig.width=12, fig.height=12}
+plot(plot.df)
+```
+There appears to be linear relationships between the predictor variables and Auto_sales based on the first column of this plot.
+
+
+## Multiple Linear Regression model - base R package
+
+The input data for the regression analysis has 9 predictor variables for the past eleven years, 2011 to 2021.
+
+```{r str plot.df}
+str(plot.df)
+```
+
+
+```{r regression model 1}
+model <- lm(Auto_sales ~ Freight_Rail_Carloads + Transit_Ridership___Other_Transit_Modes___Adjusted + Transit_Ridership___Fixed_Route_Bus___Adjusted +
+Transit_Ridership___Urban_Rail___Adjusted +
+State_and_Local_Government_Construction_Spending___Mass_Transit + State_and_Local_Government_Construction_Spending___Automotive + Labor_Force_Participation_Rate___Seasonally_Adjusted +
+Passenger_Rail_Passenger_Miles, data=plot.df)
+
+```
+
+
+### Check for Outliers
+Find cooks distance for each observation in the model.
+
+```{r cooks distance}
+cooksD <- cooks.distance(model)
+```
+
+```{r plot cooks distance}
+n <- nrow(plot.df)
+
+plot(cooksD, main = "Cooks Distance for Influential Obs")
+abline(h = 4/n, lty = 2, col = "red") # add cutoff line
+```
+```{r identify influental points}
+
+influential_obs <- as.integer(names(cooksD)[(cooksD > (4/n))])
+```
+
+
+```{r head influential obs}
+head(plot.df[influential_obs,], 25)
+```
+
+
+```{r remove outlier}
+
+plot.df.rev1 <- plot.df[-c(12),]
+            
+```
+
+The outlier with the highest cooks distance was removed from the data set.  The next step is to re-fit the regression model.
+
+## Re-fit Regression model
+Re-fit regression model after removing one outlier
+
+```{r regression model 2}
+model <- lm(Auto_sales ~ Freight_Rail_Carloads + Transit_Ridership___Other_Transit_Modes___Adjusted + Transit_Ridership___Fixed_Route_Bus___Adjusted +
+Transit_Ridership___Urban_Rail___Adjusted +
+State_and_Local_Government_Construction_Spending___Mass_Transit + State_and_Local_Government_Construction_Spending___Automotive + Labor_Force_Participation_Rate___Seasonally_Adjusted +
+Passenger_Rail_Passenger_Miles, data=plot.df.rev1)
+
+```
+
+### Run Cooks D Again
+
+
+```{r cooks distance 2}
+cooksD <- cooks.distance(model)
+```
+
+```{r plot cooks distance 2}
+n <- nrow(plot.df.rev1)
+
+plot(cooksD, main = "Cooks Distance for Influential Obs 2")
+abline(h = 4/n, lty = 2, col = "red") # add cutoff line
+```
+After removing the outlier record which had a cooks distance of 0.10, there remains outliers in the 
+dataset. But the furthest outlier has a cooks distance value of 0.09 which is less than the cooks distance for the removed outlier. Because this dataset only has 131 observations, it is best not to remove any more outlier records.
+
+
+### Summary of Multiple Linear Regression Model
+
+The regression model meets the follow requirements thus far:
+
+1 - There is no missing data in the data set
+
+2 - The largest outlier was removed
+
+3 - There appears to be linear relationships between the predictor variables and Auto_sales (dependent variable)
+
+The next step is to analyse the statistical summary of the model.
+
+```{r summary of model}
+summary(model)
+```
+
+The p-values for Freight_Rail_Carloads, Transit_Ridership__Other_Transit_Modes_Adjusted, State_and_Local_Government_Construction_Spending_Mass_Transit, and State_and_Local_Government_Construction_Spending_Automotive are not significant (p-value > 0.05). These variables will be removed from the analysis.  The model has an adjusted R-squared value of 0.74 which is statistically significant (p-value < 0.05). 
+
+After removing the predictor variables that are not significant, a new model will be created with the lessR package which will provide a more detailed analysis of the regression model.
+
+## Multiple Linear Regression model - lessR package
+
+A new model will be created with the lessR package. The lessR regression package will provide more diagnostics including collinearity measures between the independent variables.  
+
+
+```{r use lessR package, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(lessR)
+```
+
+### Statistical summary
+
+```{r lessR multiple linear regression, echo=TRUE, warning=FALSE}
+regObj <- Regression(Auto_sales ~ Transit_Ridership___Fixed_Route_Bus___Adjusted + Transit_Ridership___Urban_Rail___Adjusted + 
+     Labor_Force_Participation_Rate___Seasonally_Adjusted + Passenger_Rail_Passenger_Miles, data=plot.df.rev1, graphics = FALSE)
+```
+
+```{r Regression output}
+regObj
+
+```
+
+
+### Residuals plot
+
+```{r Residuals plot}
+regPlot(regObj, type = 3)
+
+```
+
+The residuals plot indicates homoscedasticity for the residual variance.  We do not see evidence of heteroscedasticity among the residual values since the plotted values do not form a funnel shape.
+
+### Scatter plot
+
+```{r Scatter plot}
+regPlot(regObj, type = 1)
+```
+
+This scatter plot shows a linear relationship between the independent variables and the dependent variable (Auto_sales). It also shows a strong correlation of 0.95 between Transit_Ridership_Fixed_Route_Bus_Adjusted and Transit_Ridership_Urban_Rail_Adjusted.
+
+### Multicollinearity
+
+A tolerance close to zero indicates an issue with collinearity. The Transit_Ridership_Fixed_Route_Bus_Adjusted and Transit_Ridership_Urban_Rail_Adjusted predictor variables have very low tolerance values of 0.063 and 0.059 respectively. The scatter plot above shows a strong correlation between Transit_Ridership_Fixed_Route_Bus_Adjusted and Transit_Ridership_Urban_Rail_Adjusted of 0.95. 
+
+The Transit_Ridership_Urban_Rail_Adjusted variable will be removed from the model.
+
+```{r remove independent variable}
+plot.df.rev2 <- subset(plot.df.rev1, select = -c(Transit_Ridership___Urban_Rail___Adjusted))
+```
+
+```{r str plot.df.rev2}
+str(plot.df.rev2)
+```
+
+
+## Re-create Multiple Regression model - lessR package
+
+```{r re-create lessR regression model, warning=FALSE}
+regObj2 <- Regression(Auto_sales ~ Transit_Ridership___Fixed_Route_Bus___Adjusted + Labor_Force_Participation_Rate___Seasonally_Adjusted + Passenger_Rail_Passenger_Miles, data=plot.df.rev2, graphics = FALSE)
+```
+
+```{r regression output 2 }
+regObj2
+```
+
+
+## Findings 
+
+The final model has an adjusted R-squared of 0.65 in which 65% of the variability in Auto_sales is explained by Transit_Ridership__Fixed_Route_Bus___Adjusted, Labor_Force_Participation_Rate___Seasonally_Adjusted. The third independent variable, Passenger_Rail_Passenger_Miles was shown to be insignificant (p-value > 0.05).
+
+The Transit_Ridership__Fixed_Route_Bus___Adjusted independent variable has a regression coefficient near zero (0.0020 while Labor_Force_Participation_Rate___Seasonally_Adjusted has a very high negative regression coefficient of -7013126.739.  Based on these extreme values, these variables should be analysed further.  
+
+The auto sales response variable appears to be independent of the transportation statistics such as state and local construction spending, unemployment rate, labor participation rate, and rail and air travel. However, the heat maps reveal a near opposite scenario with light truck sales. The light truck sales variable shows opposite correlations with most variables as compared to auto sales. 
+
+A car is a staple for most people in the United States. People need cars to live their lives and factors such as unemployment, transit and transportation spending, as well as fuel prices may not predict car sales.
+
+
+## Limitations of Analysis
+
+The initial dataset, MTS.csv had over 130 columns to analyze and screen for possible inclusion into a ML regression model for predicting monthly auto sales. The initial data set was arbitrarily partitioned horizontally by extracting sequences of 20 columns at a time and extracting them into separate CSV files. 
+
+As a result, eight separate CSV files were loaded into R data frames and correlation matrices were created on each data frame.  The issue with this approach was that variables in separate data frames were not evaluated against each other for determining correlation among them.  The partitioning strategy was done because it was not feasible to calculate a correlation matrix on a data set with over a hundred variables. 
+
+There was also limited meta data available for some of the variables which meant that some variables with significant correlation to auto sales may have been excluded due to the lack of meta data, and knowledge of the transportation variable.
+
+
+## References
+
+Zach. May 11, 2019. How to Identify Influential Data Points Using Cook’s Distance. Retrieved from 
+https://www.statology.org/how-to-identify-influential-data-points-using-cooks-distance/
+
+Caughlin, D. May 3, 2020. Multiple Linear Regression in R. Retrieved from https://www.youtube.com/watch?v=zyEZop-5K9Q
+
+
